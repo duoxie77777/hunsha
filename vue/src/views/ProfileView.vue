@@ -81,7 +81,7 @@
                   <div class="order-card-header">
                     <div class="order-id">
                       <el-icon><Document /></el-icon>
-                      <span>{{ order.id }}</span>
+                      <span>{{ order.orderNo }}</span>
                     </div>
                     <el-tag
                       :type="statusType(order.status)"
@@ -96,19 +96,19 @@
                     <div class="order-info-grid">
                       <div class="order-info-item">
                         <span class="label">套餐</span>
-                        <span class="value">{{ order.pkgLabel }}</span>
+                        <span class="value">{{ order.packageName }}</span>
                       </div>
                       <div class="order-info-item">
                         <span class="label">日期</span>
-                        <span class="value">{{ order.date }}</span>
+                        <span class="value">{{ order.shootDate || '待定' }}</span>
                       </div>
                       <div class="order-info-item">
-                        <span class="label">姓名</span>
-                        <span class="value">{{ order.name }}</span>
+                        <span class="label">联系人</span>
+                        <span class="value">{{ order.contactName }}</span>
                       </div>
                       <div class="order-info-item">
-                        <span class="label">风格</span>
-                        <span class="value">{{ order.styles || '未选择' }}</span>
+                        <span class="label">金额</span>
+                        <span class="value">¥{{ order.amount }}</span>
                       </div>
                     </div>
                     <div v-if="order.remark" class="order-remark">
@@ -117,7 +117,7 @@
                   </div>
 
                   <div class="order-card-footer">
-                    <span class="order-time">{{ order.createTime }}</span>
+                    <span class="order-time">{{ order.createdAt }}</span>
                     <div class="order-actions">
                       <el-button
                         size="small"
@@ -239,11 +239,13 @@ const profile = reactive({
   weddingDate: ''
 })
 
-onMounted(() => {
+onMounted(async () => {
   if (!userStore.isLoggedIn) {
     router.push('/')
     return
   }
+  // 拉取订单
+  await userStore.fetchOrders()
   // 载入已保存的资料
   const u = userStore.user
   if (u) {
@@ -298,15 +300,16 @@ function goReview(order) {
   router.push({ path: '/reviews', query: { orderId: order.id } })
 }
 
-function cancelOrder(order) {
-  ElMessageBox.confirm('确定要取消该订单吗？', '取消订单', {
-    confirmButtonText: '确定取消',
-    cancelButtonText: '再想想',
-    type: 'warning'
-  }).then(() => {
-    userStore.cancelOrder(order.id)
+async function cancelOrder(order) {
+  try {
+    await ElMessageBox.confirm('确定要取消该订单吗？', '取消订单', {
+      confirmButtonText: '确定取消',
+      cancelButtonText: '再想想',
+      type: 'warning'
+    })
+    await userStore.cancelOrder(order.id)
     ElMessage.success('订单已取消')
-  }).catch(() => {})
+  } catch {}
 }
 </script>
 

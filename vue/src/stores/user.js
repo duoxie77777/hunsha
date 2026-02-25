@@ -1,9 +1,9 @@
 import { reactive } from 'vue'
 import { loginApi, registerApi, getUserInfoApi } from '../api/auth'
+import { createOrderApi, getMyOrdersApi, cancelOrderApi } from '../api/order'
 
 const TOKEN_KEY = 'token'
 const USER_KEY = 'weiai_user'
-const ORDERS_KEY = 'weiai_orders'
 
 function loadUser() {
   try {
@@ -14,18 +14,9 @@ function loadUser() {
   }
 }
 
-function loadOrders() {
-  try {
-    const data = localStorage.getItem(ORDERS_KEY)
-    return data ? JSON.parse(data) : []
-  } catch {
-    return []
-  }
-}
-
 export const userStore = reactive({
   user: loadUser(),
-  orders: loadOrders(),
+  orders: [],
   showLogin: false,
   showBooking: false,
   showChat: false,
@@ -56,6 +47,9 @@ export const userStore = reactive({
     localStorage.setItem(USER_KEY, JSON.stringify(this.user))
     this.showLogin = false
 
+    // 登录后拉取订单
+    this.fetchOrders()
+
     return data
   },
 
@@ -76,12 +70,22 @@ export const userStore = reactive({
     }
   },
 
+  // 获取我的订单列表
+  async fetchOrders() {
+    if (!this.isLoggedIn) return
+    try {
+      const res = await getMyOrdersApi()
+      this.orders = res.data || []
+    } catch {
+      this.orders = []
+    }
+  },
+
   logout() {
     this.user = null
     this.orders = []
     localStorage.removeItem(TOKEN_KEY)
     localStorage.removeItem(USER_KEY)
-    localStorage.removeItem(ORDERS_KEY)
   },
 
   updateProfile(profile) {
@@ -90,25 +94,21 @@ export const userStore = reactive({
     localStorage.setItem(USER_KEY, JSON.stringify(this.user))
   },
 
-  addOrder(order) {
-    const newOrder = {
-      id: 'WA' + Date.now().toString(36).toUpperCase(),
-      ...order,
-      status: '待确认',
-      createTime: new Date().toLocaleString('zh-CN'),
-      timestamp: Date.now()
-    }
+  // 创建订单 - 调用后端接口
+  async addOrder(orderData) {
+    const res = await createOrderApi(orderData)
+    const newOrder = res.data
     this.orders.unshift(newOrder)
-    localStorage.setItem(ORDERS_KEY, JSON.stringify(this.orders))
     this.currentOrder = newOrder
     return newOrder
   },
 
-  cancelOrder(orderId) {
+  // 取消订单 - 调用后端接口
+  async cancelOrder(orderId) {
+    await cancelOrderApi(orderId)
     const order = this.orders.find(o => o.id === orderId)
     if (order) {
       order.status = '已取消'
-      localStorage.setItem(ORDERS_KEY, JSON.stringify(this.orders))
     }
   },
 

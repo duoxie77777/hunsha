@@ -113,9 +113,12 @@
 </template>
 
 <script setup>
-import { reactive } from 'vue'
+import { ref, onMounted } from 'vue'
 import { Select, StarFilled, Star, Location, Phone, Message, Clock } from '@element-plus/icons-vue'
 import { userStore } from '../stores/user'
+import { getPackagesApi } from '../api/package'
+import { getPortfoliosApi } from '../api/portfolio'
+import { getReviewsApi } from '../api/review'
 
 const slides = [
   { img: 'https://picsum.photos/id/1011/1920/1080', title: '定格永恒的爱', desc: '用镜头捕捉每一个浪漫瞬间，让幸福成为永恒的记忆', btn: '了解更多' },
@@ -132,28 +135,63 @@ const services = [
   { img: 'https://picsum.photos/id/1082/600/400', title: '旅拍服务', desc: '全国热门旅拍城市可选，一站式服务，包含交通住宿，边旅行边拍婚纱照。' }
 ]
 
-const works = [
+const works = ref([
   { img: 'https://picsum.photos/id/1015/600/400', title: '森系婚纱照', desc: '自然清新 · 浪漫唯美' },
   { img: 'https://picsum.photos/id/1018/600/400', title: '复古婚纱照', desc: '经典永恒 · 优雅大气' },
   { img: 'https://picsum.photos/id/1025/600/400', title: '海景婚纱照', desc: '浪漫海边 · 唯美大气' },
   { img: 'https://picsum.photos/id/1035/600/400', title: '城市婚纱照', desc: '时尚都市 · 个性十足' },
   { img: 'https://picsum.photos/id/1045/600/400', title: '中式婚纱照', desc: '传统韵味 · 喜庆吉祥' },
   { img: 'https://picsum.photos/id/1065/600/400', title: '轻奢婚纱照', desc: '高端定制 · 奢华体验' }
-]
+])
 
-const packages = [
+const packages = ref([
   { name: '浪漫体验套餐', price: '¥3999', popular: false, features: ['室内拍摄场景3个', '服装造型各3套', '精修照片20张', '10寸水晶相册1本', '24寸放大相框1个', '底片全送'] },
   { name: '经典挚爱套餐', price: '¥6999', popular: true, features: ['室内+外景拍摄', '服装造型各5套', '精修照片40张', '16寸水晶相册2本', '36寸放大相框1个', '底片全送+视频花絮'] },
   { name: '高端定制套餐', price: '¥12999', popular: false, features: ['多场景定制拍摄', '服装造型不限', '精修照片80张', '高端定制相册3本', '全屋相框组合', '微电影+底片全送'] }
-]
+])
 
-const testimonials = [
+const testimonials = ref([
   { img: 'https://picsum.photos/id/1001/200/200', text: '拍摄体验非常好，摄影师很专业，化妆师的技术也超棒，照片出来的效果比想象中还要好，非常满意！', name: '张先生 & 李女士', stars: 5, half: false },
   { img: 'https://picsum.photos/id/1002/200/200', text: '从前期沟通到后期选片，整个过程都非常顺畅，工作人员都很有耐心，性价比超高，推荐给准备拍婚纱照的朋友们！', name: '王先生 & 刘女士', stars: 5, half: false },
   { img: 'https://picsum.photos/id/1003/200/200', text: '旅拍服务真的太赞了，全程不用操心，摄影师会指导动作，拍出来的照片自然又好看，是一次非常完美的体验。', name: '赵先生 & 陈女士', stars: 4, half: true }
-]
+])
 
-const form = reactive({ name: '', phone: '', date: '', pkg: '', message: '' })
+onMounted(async () => {
+  try {
+    const [pkgRes, workRes, reviewRes] = await Promise.allSettled([
+      getPackagesApi(),
+      getPortfoliosApi({ page: 1, size: 6 }),
+      getReviewsApi({ page: 1, size: 3, featured: 1 })
+    ])
+
+    if (pkgRes.status === 'fulfilled' && pkgRes.value.data?.length) {
+      packages.value = pkgRes.value.data.map(p => ({
+        name: p.name,
+        price: '¥' + p.price,
+        popular: p.isHot === 1,
+        features: p.includes || []
+      }))
+    }
+
+    if (workRes.status === 'fulfilled' && workRes.value.data?.records?.length) {
+      works.value = workRes.value.data.records.map(w => ({
+        img: w.coverImage || 'https://picsum.photos/id/1015/600/400',
+        title: w.title,
+        desc: w.description || w.category
+      }))
+    }
+
+    if (reviewRes.status === 'fulfilled' && reviewRes.value.data?.records?.length) {
+      testimonials.value = reviewRes.value.data.records.map(r => ({
+        img: 'https://picsum.photos/id/1001/200/200',
+        text: r.content,
+        name: '客户评价',
+        stars: r.rating,
+        half: false
+      }))
+    }
+  } catch {}
+})
 </script>
 
 <style scoped>

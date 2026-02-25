@@ -49,32 +49,26 @@
             <div class="review-header">
               <div class="reviewer-info">
                 <div class="reviewer-avatar">
-                  <img v-if="review.avatar" :src="review.avatar" alt="" />
-                  <el-icon v-else :size="28" color="#ccc"><UserFilled /></el-icon>
+                  <el-icon :size="28" color="#ccc"><UserFilled /></el-icon>
                 </div>
                 <div>
-                  <div class="reviewer-name">{{ review.name }}</div>
-                  <div class="review-date">{{ review.date }}</div>
+                  <div class="reviewer-name">客户评价</div>
+                  <div class="review-date">{{ review.createdAt }}</div>
                 </div>
               </div>
               <div class="review-header-right">
                 <el-rate :model-value="review.rating" disabled :colors="['#f8c145','#f8c145','#f8c145']" />
-                <el-tag v-if="review.orderId" size="small" type="info" effect="plain">{{ review.orderId }}</el-tag>
               </div>
             </div>
-            <el-tag size="small" type="danger" effect="plain" style="margin-bottom:15px;">{{ review.pkg }}</el-tag>
             <div class="review-content">
-              <span v-if="review.highlight" class="review-highlight">{{ review.highlight }}</span> {{ review.text }}
+              {{ review.content }}
             </div>
             <div class="review-images" v-if="review.images && review.images.length">
               <el-image v-for="(img, j) in review.images" :key="j" :src="img" fit="cover" :preview-src-list="review.images" class="review-image" />
             </div>
-            <div class="review-tags" v-if="review.tags && review.tags.length">
-              <el-tag v-for="t in review.tags" :key="t" size="small" type="info" effect="plain">{{ t }}</el-tag>
-            </div>
-            <div class="review-actions">
-              <span @click="likeReview(review)"><el-icon><Top /></el-icon> 有用 ({{ review.likes || 0 }})</span>
-              <span><el-icon><Share /></el-icon> 分享</span>
+            <div v-if="review.adminReply" class="review-reply-box" style="background:#f8f9fa;border-radius:10px;padding:12px 16px;margin-top:12px;">
+              <div style="font-size:0.82rem;font-weight:700;color:#e88a94;margin-bottom:6px;">商家回复</div>
+              <p style="color:#666;font-size:0.88rem;line-height:1.6;">{{ review.adminReply }}</p>
             </div>
           </div>
         </div>
@@ -206,35 +200,48 @@ import { Top, Share, UserFilled, Document, Plus, Close, CircleCheckFilled } from
 import { ElMessage } from 'element-plus'
 import { userStore } from '../stores/user'
 import { useRoute } from 'vue-router'
+import { getReviewsApi, submitReviewApi } from '../api/review'
+import { uploadImageApi } from '../api/upload'
 
 const route = useRoute()
-
-const REVIEWS_KEY = 'weiai_user_reviews'
-function loadUserReviews() {
-  try { return JSON.parse(localStorage.getItem(REVIEWS_KEY) || '[]') } catch { return [] }
-}
-function saveUserReviews(data) {
-  localStorage.setItem(REVIEWS_KEY, JSON.stringify(data))
-}
 
 const ratingFilter = ref('all')
 const sortBy = ref('latest')
 const submitting = ref(false)
 const imageInputRef = ref(null)
+const totalReviews = ref(0)
+const currentPage = ref(1)
+const pageSize = ref(10)
 
-// 默认评价数据
-const defaultReviews = [
-  { id: 'd1', avatar: 'https://picsum.photos/id/1005/200/200', name: '张先生 & 李女士', date: '2025年12月15日', rating: 5, pkg: '经典挚爱套餐', highlight: '超出预期的拍摄体验！', text: '从前期沟通到后期选片，整个过程都非常顺畅。摄影师非常专业，化妆师的技术超棒，照片出来的效果非常自然。', images: ['https://picsum.photos/id/1011/200/200', 'https://picsum.photos/id/1015/200/200', 'https://picsum.photos/id/1018/200/200'], tags: ['服务周到', '拍摄专业', '化妆精致'], likes: 128, timestamp: 1702627200000 },
-  { id: 'd2', avatar: 'https://picsum.photos/id/1006/200/200', name: '王先生 & 陈女士', date: '2025年11月28日', rating: 5, pkg: '高端定制套餐', highlight: '三亚旅拍体验超棒！', text: '选择了唯爱的高端定制旅拍套餐，整个过程非常省心，总监级摄影师的技术果然名不虚传。', images: ['https://picsum.photos/id/1019/200/200', 'https://picsum.photos/id/1035/200/200'], tags: ['旅拍推荐', '技术精湛', '服务贴心'], likes: 98, timestamp: 1701158400000 },
-  { id: 'd3', avatar: 'https://picsum.photos/id/1010/200/200', name: '刘先生 & 赵女士', date: '2025年10月18日', rating: 4, pkg: '浪漫体验套餐', highlight: '整体满意，略有小遗憾', text: '作为性价比很高的体验套餐，整体拍摄效果还是很满意的。摄影师很有耐心。', images: ['https://picsum.photos/id/1047/200/200'], tags: ['性价比高', '耐心指导'], likes: 76, timestamp: 1697616000000 },
-  { id: 'd4', avatar: 'https://picsum.photos/id/1012/200/200', name: '孙先生 & 周女士', date: '2025年9月25日', rating: 5, pkg: '经典挚爱套餐', highlight: '中式婚纱照拍得超有韵味！', text: '对比了很多家最终选择了唯爱。服装非常精美，摄影师非常懂中式美学。', images: ['https://picsum.photos/id/1069/200/200', 'https://picsum.photos/id/1074/200/200'], tags: ['中式风格', '细节精美', '有故事感'], likes: 89, timestamp: 1695628800000 }
-]
+const allReviews = ref([])
 
-const userReviews = ref(loadUserReviews())
+async function loadReviews() {
+  try {
+    const params = { page: currentPage.value, size: pageSize.value }
+    const res = await getReviewsApi(params)
+    allReviews.value = res.data?.records || []
+    totalReviews.value = res.data?.total || 0
+  } catch {
+    allReviews.value = []
+  }
+}
 
-// 合并默认+用户评价
-const allReviews = computed(() => {
-  return [...userReviews.value, ...defaultReviews]
+onMounted(async () => {
+  await loadReviews()
+  if (userStore.isLoggedIn) {
+    await userStore.fetchOrders()
+  }
+
+  const orderId = route.query.orderId
+  if (orderId && userStore.isLoggedIn) {
+    const order = completedOrders.value.find(o => o.id == orderId)
+    if (order) {
+      selectOrder(order)
+      setTimeout(() => {
+        document.querySelector('.submit-review')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }, 300)
+    }
+  }
 })
 
 const overallRating = computed(() => {
@@ -259,8 +266,6 @@ const filteredReviews = computed(() => {
   }
   if (sortBy.value === 'highest') {
     result.sort((a, b) => b.rating - a.rating)
-  } else {
-    result.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
   }
   return result
 })
@@ -270,9 +275,10 @@ const completedOrders = computed(() => {
   return (userStore.orders || []).filter(o => o.status === '已完成')
 })
 
-// 判断订单是否已评价
+// 判断订单是否已评价（简单标记，后端会校验）
+const reviewedOrderIds = ref(new Set())
 function isOrderReviewed(orderId) {
-  return userReviews.value.some(r => r.orderId === orderId)
+  return reviewedOrderIds.value.has(orderId)
 }
 
 const reviewForm = reactive({
@@ -280,7 +286,8 @@ const reviewForm = reactive({
   orderPkgLabel: '',
   rating: 5,
   text: '',
-  images: []
+  images: [],
+  imageFiles: []
 })
 
 function selectOrder(order) {
@@ -289,10 +296,11 @@ function selectOrder(order) {
     return
   }
   reviewForm.orderId = order.id
-  reviewForm.orderPkgLabel = order.pkgLabel || ''
+  reviewForm.orderPkgLabel = order.packageName || ''
   reviewForm.rating = 5
   reviewForm.text = ''
   reviewForm.images = []
+  reviewForm.imageFiles = []
 }
 
 function triggerImageUpload() {
@@ -311,6 +319,7 @@ function handleImageUpload(e) {
       ElMessage.warning(`图片 ${file.name} 超过5MB，已跳过`)
       return
     }
+    reviewForm.imageFiles.push(file)
     const reader = new FileReader()
     reader.onload = (ev) => {
       reviewForm.images.push(ev.target.result)
@@ -318,19 +327,19 @@ function handleImageUpload(e) {
     reader.readAsDataURL(file)
   })
 
-  // 重置 input
   e.target.value = ''
 }
 
 function removeImage(idx) {
   reviewForm.images.splice(idx, 1)
+  reviewForm.imageFiles.splice(idx, 1)
 }
 
 function likeReview(review) {
   review.likes = (review.likes || 0) + 1
 }
 
-function submitReview() {
+async function submitReview() {
   if (!reviewForm.text.trim()) {
     ElMessage.warning('请填写评价内容')
     return
@@ -341,73 +350,36 @@ function submitReview() {
   }
 
   submitting.value = true
-  setTimeout(() => {
-    const newReview = {
-      id: 'ur_' + Date.now().toString(36),
-      orderId: reviewForm.orderId,
-      avatar: userStore.user?.avatar || '',
-      name: userStore.user?.nickname || '匿名用户',
-      date: new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' }),
-      rating: reviewForm.rating,
-      pkg: reviewForm.orderPkgLabel,
-      highlight: '',
-      text: reviewForm.text,
-      images: [...reviewForm.images],
-      tags: [],
-      likes: 0,
-      timestamp: Date.now()
+  try {
+    // 上传图片
+    const imageUrls = []
+    for (const file of reviewForm.imageFiles) {
+      const res = await uploadImageApi(file)
+      imageUrls.push(res.data)
     }
 
-    userReviews.value.unshift(newReview)
-    saveUserReviews(userReviews.value)
+    await submitReviewApi({
+      orderId: reviewForm.orderId,
+      rating: reviewForm.rating,
+      content: reviewForm.text,
+      images: imageUrls
+    })
 
-    // 同步到后台评价管理
-    syncToAdminReviews(newReview)
-
-    submitting.value = false
+    reviewedOrderIds.value.add(reviewForm.orderId)
     reviewForm.orderId = ''
     reviewForm.text = ''
     reviewForm.images = []
+    reviewForm.imageFiles = []
     reviewForm.rating = 5
 
     ElMessage.success('评价提交成功，感谢您的分享！')
-  }, 800)
-}
-
-function syncToAdminReviews(review) {
-  try {
-    const ADMIN_REVIEWS_KEY = 'weiai_admin_reviews'
-    const adminReviews = JSON.parse(localStorage.getItem(ADMIN_REVIEWS_KEY) || '[]')
-    adminReviews.unshift({
-      id: review.id,
-      customerName: review.name,
-      avatar: review.avatar,
-      date: review.date,
-      rating: review.rating,
-      content: review.text,
-      pkgName: review.pkg,
-      images: review.images,
-      reply: '',
-      replied: false,
-      featured: false
-    })
-    localStorage.setItem(ADMIN_REVIEWS_KEY, JSON.stringify(adminReviews))
-  } catch {}
-}
-
-// 从路由参数自动选中订单
-onMounted(() => {
-  const orderId = route.query.orderId
-  if (orderId && userStore.isLoggedIn) {
-    const order = completedOrders.value.find(o => o.id === orderId)
-    if (order) {
-      selectOrder(order)
-      setTimeout(() => {
-        document.querySelector('.submit-review')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-      }, 300)
-    }
+    await loadReviews()
+  } catch {
+    // error handled by interceptor
+  } finally {
+    submitting.value = false
   }
-})
+}
 
 const caseList = [
   { badge: '三亚旅拍', img: 'https://picsum.photos/id/1011/800/600', title: '海边的承诺：张先生 & 李女士', story: '相识于大学校园，相恋8年，在三亚的海边完成了他们的婚纱照拍摄。' },

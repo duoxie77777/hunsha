@@ -42,7 +42,7 @@
               v-for="(ev, i) in day.events.slice(0, 3)"
               :key="i"
               class="event-dot"
-              :class="'status-' + ev.status"
+              :class="getStatusClass(ev.status)"
               :title="ev.customerName + ' - ' + ev.pkgName"
             >
               <span class="event-text">{{ ev.customerName }}</span>
@@ -68,7 +68,7 @@
             v-for="ev in d.events"
             :key="ev.id"
             class="week-event-card"
-            :class="'status-' + ev.status"
+            :class="getStatusClass(ev.status)"
             @click="editEvent(ev)"
           >
             <div class="ev-time">{{ ev.time || '全天' }}</div>
@@ -100,8 +100,8 @@
             </div>
             <div class="ev-actions">
               <el-button size="small" text type="primary" @click="editEvent(ev)">编辑</el-button>
-              <el-button size="small" text type="success" v-if="ev.status === 'pending'" @click="confirmEvent(ev)">确认</el-button>
-              <el-button size="small" text type="info" v-if="ev.status === 'confirmed'" @click="completeEvent(ev)">完成</el-button>
+              <el-button size="small" text type="success" v-if="ev.status === '待确认'" @click="confirmEvent(ev)">确认</el-button>
+              <el-button size="small" text type="info" v-if="ev.status === '已确认'" @click="completeEvent(ev)">完成</el-button>
               <el-button size="small" text type="danger" @click="deleteEvent(ev)">删除</el-button>
             </div>
           </div>
@@ -115,29 +115,27 @@
     <!-- 新增/编辑弹窗 -->
     <el-dialog v-model="eventDialogVisible" :title="editingEvent ? '编辑排期' : '新增排期'" width="500px" :close-on-click-modal="false">
       <el-form :model="eventForm" :rules="eventRules" ref="eventFormRef" label-width="80px">
-        <el-form-item label="客户姓名" prop="customerName">
-          <el-input v-model="eventForm.customerName" placeholder="输入客户姓名" />
+        <el-form-item label="标题" prop="title">
+          <el-input v-model="eventForm.title" placeholder="例：李小姐 - 经典套餐拍摄" />
         </el-form-item>
-        <el-form-item label="联系电话">
-          <el-input v-model="eventForm.phone" placeholder="选填" />
+        <el-form-item label="拍摄日期" prop="shootDate">
+          <el-date-picker v-model="eventForm.shootDate" type="date" placeholder="选择日期" style="width: 100%;" format="YYYY-MM-DD" value-format="YYYY-MM-DD" />
         </el-form-item>
-        <el-form-item label="拍摄日期" prop="date">
-          <el-date-picker v-model="eventForm.date" type="date" placeholder="选择日期" style="width: 100%;" format="YYYY-MM-DD" value-format="YYYY-MM-DD" />
-        </el-form-item>
-        <el-form-item label="拍摄时间">
-          <el-time-picker v-model="eventForm.time" placeholder="选填" format="HH:mm" value-format="HH:mm" style="width: 100%;" />
-        </el-form-item>
-        <el-form-item label="套餐名称" prop="pkgName">
-          <el-input v-model="eventForm.pkgName" placeholder="例：经典套餐" />
+        <el-form-item label="时间段">
+          <el-input v-model="eventForm.timeSlot" placeholder="例：09:00-12:00" />
         </el-form-item>
         <el-form-item label="拍摄地点">
           <el-input v-model="eventForm.location" placeholder="例：三亚海棠湾" />
         </el-form-item>
+        <el-form-item label="摄影师">
+          <el-input v-model="eventForm.photographer" placeholder="摄影师姓名" />
+        </el-form-item>
         <el-form-item label="状态">
           <el-radio-group v-model="eventForm.status">
-            <el-radio label="pending">待确认</el-radio>
-            <el-radio label="confirmed">已确认</el-radio>
-            <el-radio label="completed">已完成</el-radio>
+            <el-radio label="待确认">待确认</el-radio>
+            <el-radio label="已确认">已确认</el-radio>
+            <el-radio label="进行中">进行中</el-radio>
+            <el-radio label="已完成">已完成</el-radio>
           </el-radio-group>
         </el-form-item>
         <el-form-item label="备注">
@@ -153,19 +151,12 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { Plus, ArrowLeft, ArrowRight, Tickets, Clock, Location, Document } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { getSchedulesApi, createScheduleApi, updateScheduleApi, deleteScheduleApi } from '../../api/admin'
 
-const SCHEDULE_KEY = 'weiai_schedule'
-function loadSchedule() {
-  try { return JSON.parse(localStorage.getItem(SCHEDULE_KEY) || '[]') } catch { return [] }
-}
-function saveScheduleToStorage(data) {
-  localStorage.setItem(SCHEDULE_KEY, JSON.stringify(data))
-}
-
-const events = ref(loadSchedule().length > 0 ? loadSchedule() : getDefaults())
+const events = ref([])
 const viewMode = ref('month')
 const weekdays = ['日', '一', '二', '三', '四', '五', '六']
 
@@ -180,37 +171,38 @@ const editingEvent = ref(null)
 const eventFormRef = ref(null)
 
 const eventForm = reactive({
-  customerName: '',
-  phone: '',
-  date: '',
-  time: '',
-  pkgName: '',
+  title: '',
+  shootDate: '',
+  timeSlot: '',
   location: '',
-  status: 'pending',
-  remark: ''
+  photographer: '',
+  status: '待确认',
+  remark: '',
+  orderId: null
 })
 
 const eventRules = {
-  customerName: [{ required: true, message: '请输入客户姓名', trigger: 'blur' }],
-  date: [{ required: true, message: '请选择日期', trigger: 'change' }],
-  pkgName: [{ required: true, message: '请输入套餐名称', trigger: 'blur' }]
+  title: [{ required: true, message: '请输入标题', trigger: 'blur' }],
+  shootDate: [{ required: true, message: '请选择日期', trigger: 'change' }]
 }
 
-function getDefaults() {
-  const today = new Date()
-  const y = today.getFullYear()
-  const m = String(today.getMonth() + 1).padStart(2, '0')
-  const list = [
-    { id: '1', customerName: '李小姐', phone: '138****1234', date: `${y}-${m}-${String(Math.min(today.getDate() + 1, 28)).padStart(2, '0')}`, time: '09:00', pkgName: '经典套餐', location: '室内影棚A', status: 'confirmed', remark: '需要提前准备红色中式礼服' },
-    { id: '2', customerName: '张先生 & 王小姐', phone: '139****5678', date: `${y}-${m}-${String(Math.min(today.getDate() + 3, 28)).padStart(2, '0')}`, time: '14:00', pkgName: '奢华套餐', location: '三亚海棠湾', status: 'pending', remark: '' },
-    { id: '3', customerName: '刘女士', phone: '137****9012', date: `${y}-${m}-${String(Math.min(today.getDate() + 5, 28)).padStart(2, '0')}`, time: '10:00', pkgName: '轻享套餐', location: '户外花园', status: 'confirmed', remark: '客户偏好韩式风格' },
-    { id: '4', customerName: '陈先生', phone: '136****3456', date: `${y}-${m}-${String(Math.max(today.getDate() - 2, 1)).padStart(2, '0')}`, time: '全天', pkgName: '至尊套餐', location: '多场景', status: 'completed', remark: '' }
-  ]
-  saveScheduleToStorage(list)
-  return list
+async function loadSchedules() {
+  try {
+    const res = await getSchedulesApi({ page: 1, size: 200 })
+    if (res.data?.code === 200) {
+      events.value = (res.data.data?.records || []).map(s => ({
+        ...s,
+        date: s.shootDate || '',
+        time: s.timeSlot || '',
+        customerName: s.title || '',
+        pkgName: s.photographer || ''
+      }))
+    }
+  } catch (e) { console.error(e) }
 }
 
-// 月视图日历天数
+onMounted(() => loadSchedules())
+
 const calendarDays = computed(() => {
   const y = currentYear.value
   const m = currentMonth.value
@@ -221,7 +213,6 @@ const calendarDays = computed(() => {
   const days = []
   const todayStr = formatDateStr(new Date())
 
-  // 上月
   for (let i = firstDay - 1; i >= 0; i--) {
     const date = prevMonthDays - i
     const pm = m === 0 ? 11 : m - 1
@@ -230,13 +221,11 @@ const calendarDays = computed(() => {
     days.push({ date, currentMonth: false, isToday: false, fullDate, events: getEventsForDate(fullDate) })
   }
 
-  // 本月
   for (let d = 1; d <= daysInMonth; d++) {
     const fullDate = `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
     days.push({ date: d, currentMonth: true, isToday: fullDate === todayStr, fullDate, events: getEventsForDate(fullDate) })
   }
 
-  // 下月补齐
   const remain = 42 - days.length
   for (let d = 1; d <= remain; d++) {
     const nm = m === 11 ? 0 : m + 1
@@ -248,7 +237,6 @@ const calendarDays = computed(() => {
   return days
 })
 
-// 周视图
 const weekViewDays = computed(() => {
   const today = new Date()
   const dayOfWeek = today.getDay()
@@ -305,69 +293,122 @@ function selectDay(day) {
 }
 
 function statusTagType(status) {
-  return { pending: 'warning', confirmed: '', completed: 'success' }[status] || 'info'
+  return { '待确认': 'warning', '已确认': '', '已完成': 'success', '进行中': 'primary' }[status] || 'info'
 }
 
 function statusLabel(status) {
-  return { pending: '待确认', confirmed: '已确认', completed: '已完成' }[status] || status
+  return status || '未知'
+}
+
+function getStatusClass(status) {
+  const map = { '待确认': 'status-pending', '已确认': 'status-confirmed', '已完成': 'status-completed', '进行中': 'status-confirmed' }
+  return map[status] || 'status-pending'
 }
 
 function openAddEvent() {
   editingEvent.value = null
-  Object.assign(eventForm, { customerName: '', phone: '', date: '', time: '', pkgName: '', location: '', status: 'pending', remark: '' })
+  Object.assign(eventForm, { title: '', shootDate: '', timeSlot: '', location: '', photographer: '', status: '待确认', remark: '', orderId: null })
   eventDialogVisible.value = true
 }
 
 function openAddEventOnDay(dateStr) {
   openAddEvent()
-  eventForm.date = dateStr
+  eventForm.shootDate = dateStr
   dayDrawerVisible.value = false
 }
 
 function editEvent(ev) {
   editingEvent.value = ev
-  Object.assign(eventForm, { customerName: ev.customerName, phone: ev.phone, date: ev.date, time: ev.time, pkgName: ev.pkgName, location: ev.location || '', status: ev.status, remark: ev.remark || '' })
+  Object.assign(eventForm, {
+    title: ev.title || ev.customerName || '',
+    shootDate: ev.shootDate || ev.date || '',
+    timeSlot: ev.timeSlot || ev.time || '',
+    location: ev.location || '',
+    photographer: ev.photographer || '',
+    status: ev.status || '待确认',
+    remark: ev.remark || '',
+    orderId: ev.orderId || null
+  })
   eventDialogVisible.value = true
   dayDrawerVisible.value = false
 }
 
-function saveEvent() {
-  eventFormRef.value?.validate((valid) => {
+async function saveEvent() {
+  eventFormRef.value?.validate(async (valid) => {
     if (!valid) return
-    if (editingEvent.value) {
-      Object.assign(editingEvent.value, { ...eventForm })
-    } else {
-      events.value.push({ id: Date.now().toString(36), ...eventForm })
+    const payload = {
+      title: eventForm.title,
+      shootDate: eventForm.shootDate,
+      timeSlot: eventForm.timeSlot,
+      location: eventForm.location,
+      photographer: eventForm.photographer,
+      status: eventForm.status,
+      remark: eventForm.remark,
+      orderId: eventForm.orderId
     }
-    saveScheduleToStorage(events.value)
-    eventDialogVisible.value = false
-    ElMessage.success(editingEvent.value ? '排期已更新' : '排期已创建')
+    try {
+      if (editingEvent.value) {
+        const res = await updateScheduleApi(editingEvent.value.id, payload)
+        if (res.data?.code === 200) {
+          ElMessage.success('排期已更新')
+          eventDialogVisible.value = false
+          loadSchedules()
+        } else {
+          ElMessage.error(res.data?.msg || '更新失败')
+        }
+      } else {
+        const res = await createScheduleApi(payload)
+        if (res.data?.code === 200) {
+          ElMessage.success('排期已创建')
+          eventDialogVisible.value = false
+          loadSchedules()
+        } else {
+          ElMessage.error(res.data?.msg || '创建失败')
+        }
+      }
+    } catch (e) {
+      ElMessage.error('操作失败')
+    }
   })
 }
 
-function confirmEvent(ev) {
-  ev.status = 'confirmed'
-  saveScheduleToStorage(events.value)
-  ElMessage.success('已确认')
-}
-
-function completeEvent(ev) {
-  ev.status = 'completed'
-  saveScheduleToStorage(events.value)
-  ElMessage.success('已标记完成')
-}
-
-function deleteEvent(ev) {
-  ElMessageBox.confirm(`确定删除「${ev.customerName}」的排期吗？`, '删除确认', {
-    confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning'
-  }).then(() => {
-    events.value = events.value.filter(e => e.id !== ev.id)
-    saveScheduleToStorage(events.value)
-    if (selectedDay.value) {
-      selectedDay.value.events = getEventsForDate(selectedDay.value.fullDate)
+async function confirmEvent(ev) {
+  try {
+    const res = await updateScheduleApi(ev.id, { ...ev, status: '已确认' })
+    if (res.data?.code === 200) {
+      ElMessage.success('已确认')
+      loadSchedules()
     }
-    ElMessage.success('已删除')
-  }).catch(() => {})
+  } catch (e) {
+    ElMessage.error('操作失败')
+  }
+}
+
+async function completeEvent(ev) {
+  try {
+    const res = await updateScheduleApi(ev.id, { ...ev, status: '已完成' })
+    if (res.data?.code === 200) {
+      ElMessage.success('已标记完成')
+      loadSchedules()
+    }
+  } catch (e) {
+    ElMessage.error('操作失败')
+  }
+}
+
+async function deleteEvent(ev) {
+  try {
+    await ElMessageBox.confirm(`确定删除「${ev.customerName || ev.title}」的排期吗？`, '删除确认', {
+      confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning'
+    })
+    const res = await deleteScheduleApi(ev.id)
+    if (res.data?.code === 200) {
+      ElMessage.success('已删除')
+      loadSchedules()
+    } else {
+      ElMessage.error(res.data?.msg || '删除失败')
+    }
+  } catch (e) {}
 }
 </script>
 

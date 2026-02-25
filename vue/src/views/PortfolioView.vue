@@ -93,15 +93,16 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { ElImageViewer } from 'element-plus'
 import { userStore } from '../stores/user'
+import { getPortfoliosApi } from '../api/portfolio'
 
 const styleFilter = ref('all')
 const showViewer = ref(false)
 const viewerUrl = ref('')
 
-const works = [
+const defaultWorks = [
   { thumb: 'https://picsum.photos/id/1011/600/800', img: 'https://picsum.photos/id/1011/1200/800', title: '森系清新外景婚纱照', tags: ['森系', '外景', '暖色系'], category: 'forest' },
   { thumb: 'https://picsum.photos/id/1015/600/800', img: 'https://picsum.photos/id/1015/1200/800', title: '复古经典室内婚纱照', tags: ['复古', '室内', '冷色系'], category: 'retro' },
   { thumb: 'https://picsum.photos/id/1018/600/800', img: 'https://picsum.photos/id/1018/1200/800', title: '中式传统婚纱照', tags: ['中式', '室内', '多彩'], category: 'chinese' },
@@ -113,9 +114,26 @@ const works = [
   { thumb: 'https://picsum.photos/id/1058/600/800', img: 'https://picsum.photos/id/1058/1200/800', title: '森系旅拍婚纱照', tags: ['森系', '旅拍', '多彩'], category: 'forest' }
 ]
 
+const works = ref(defaultWorks)
+
+onMounted(async () => {
+  try {
+    const res = await getPortfoliosApi({ page: 1, size: 50 })
+    if (res.data?.records?.length) {
+      works.value = res.data.records.map(w => ({
+        thumb: w.coverImage || 'https://picsum.photos/id/1011/600/800',
+        img: w.coverImage || 'https://picsum.photos/id/1011/1200/800',
+        title: w.title,
+        tags: [w.category || '婚纱照'],
+        category: w.category || 'all'
+      }))
+    }
+  } catch {}
+})
+
 const filteredWorks = computed(() => {
-  if (styleFilter.value === 'all') return works
-  return works.filter(w => w.category === styleFilter.value)
+  if (styleFilter.value === 'all') return works.value
+  return works.value.filter(w => w.category === styleFilter.value)
 })
 
 const previewImg = (url) => {

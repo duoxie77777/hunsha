@@ -96,7 +96,7 @@
           </div>
           <div class="detail-info-item">
             <span class="label">注册时间</span>
-            <span class="value">{{ detailCustomer.registerTime }}</span>
+            <span class="value">{{ detailCustomer.registerTime || detailCustomer.createdAt }}</span>
           </div>
           <div class="detail-info-item">
             <span class="label">最近联系</span>
@@ -118,12 +118,12 @@
         <div v-else class="detail-orders">
           <div class="detail-order-card" v-for="o in detailCustomer.orders" :key="o.id">
             <div class="order-card-top">
-              <span class="order-id">{{ o.id }}</span>
+              <span class="order-id">{{ o.orderNo }}</span>
               <el-tag :type="orderStatusType(o.status)" size="small">{{ o.status }}</el-tag>
             </div>
             <div class="order-card-body">
-              <span>{{ o.pkgLabel || o.pkg }}</span>
-              <span>{{ o.date }}</span>
+              <span>{{ o.packageName }}</span>
+              <span>{{ o.shootDate }}</span>
             </div>
           </div>
         </div>
@@ -156,11 +156,10 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { Search, UserFilled, ChatDotRound, PriceTag, User as UserIcon, Ticket, Money, TrendCharts } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import { userStore } from '../../stores/user'
-import { chatStore } from '../../stores/chat'
+import { getCustomersApi, getCustomerDetailApi, updateCustomerStatusApi } from '../../api/admin'
 import { useRouter } from 'vue-router'
 
 const router = useRouter()
@@ -172,77 +171,41 @@ const tagDialogVisible = ref(false)
 const editingTag = ref('普通')
 const editingCustomer = ref(null)
 
-const TAGS_KEY = 'weiai_customer_tags'
-function loadTags() {
-  try { return JSON.parse(localStorage.getItem(TAGS_KEY) || '{}') } catch { return {} }
-}
-function saveTags(tags) {
-  localStorage.setItem(TAGS_KEY, JSON.stringify(tags))
-}
-const customerTags = ref(loadTags())
+const customers = ref([])
+const totalCount = ref(0)
 
-// 从 chatStore + userStore.orders 汇总客户数据
-const customers = computed(() => {
-  const map = new Map()
-
-  // 从聊天记录收集客户
-  Object.entries(chatStore.chats).forEach(([phone, chat]) => {
-    if (!map.has(phone)) {
-      map.set(phone, {
-        phone,
-        nickname: chat.nickname || phone,
-        avatar: chat.avatar || '',
-        age: '',
-        bio: '',
-        orders: [],
+async function loadCustomers() {
+  try {
+    const params = { page: 1, size: 100 }
+    if (searchKey.value.trim()) params.keyword = searchKey.value.trim()
+    const res = await getCustomersApi(params)
+    if (res.data?.code === 200) {
+      const records = res.data.data?.records || []
+      customers.value = records.map(u => ({
+        ...u,
+        name: u.nickname || u.username || '未设置昵称',
+        tag: u.status === 1 ? '普通' : '禁用',
         orderCount: 0,
         totalAmount: 0,
-        lastContact: chat.lastTime || '-',
-        registerTime: '-',
-        tag: customerTags.value[phone] || '普通'
-      })
+        lastContact: u.createdAt || '-',
+        registerTime: u.createdAt || '-',
+        orders: []
+      }))
+      totalCount.value = res.data.data?.total || 0
     }
-  })
+  } catch (e) { console.error(e) }
+}
 
-  // 从订单收集客户
-  const orders = userStore.orders || []
-  orders.forEach(order => {
-    const phone = order.phone
-    if (!phone) return
-    if (!map.has(phone)) {
-      map.set(phone, {
-        phone,
-        nickname: order.name || phone,
-        avatar: '',
-        age: '',
-        bio: '',
-        orders: [],
-        orderCount: 0,
-        totalAmount: 0,
-        lastContact: order.createTime || '-',
-        registerTime: order.createTime || '-',
-        tag: customerTags.value[phone] || '普通'
-      })
-    }
-    const c = map.get(phone)
-    c.orders.push(order)
-    c.orderCount = c.orders.length
-    // 预估金额
-    const priceMap = { basic: 3999, classic: 7999, luxury: 15999, supreme: 29999 }
-    c.totalAmount += priceMap[order.pkg] || 0
-    if (!c.registerTime || c.registerTime === '-') c.registerTime = order.createTime
-    c.lastContact = order.createTime
-  })
+onMounted(() => loadCustomers())
 
-  return Array.from(map.values())
+let searchTimer = null
+watch(searchKey, () => {
+  clearTimeout(searchTimer)
+  searchTimer = setTimeout(() => loadCustomers(), 300)
 })
 
 const filteredCustomers = computed(() => {
   let list = customers.value
-  if (searchKey.value) {
-    const key = searchKey.value.toLowerCase()
-    list = list.filter(c => c.nickname.toLowerCase().includes(key) || c.phone.includes(key))
-  }
   if (filterTag.value) {
     list = list.filter(c => c.tag === filterTag.value)
   }
@@ -250,14 +213,14 @@ const filteredCustomers = computed(() => {
 })
 
 const stats = computed(() => [
-  { label: '总客户数', value: customers.value.length, icon: UserIcon, bg: 'rgba(64,158,255,0.1)', color: '#409EFF' },
-  { label: 'VIP客户', value: customers.value.filter(c => c.tag === 'VIP').length, icon: Ticket, bg: 'rgba(230,162,60,0.1)', color: '#E6A23C' },
-  { label: '已成交客户', value: customers.value.filter(c => c.tag === '已成交').length, icon: Money, bg: 'rgba(103,194,58,0.1)', color: '#67C23A' },
-  { label: '总消费额', value: '¥' + customers.value.reduce((s, c) => s + c.totalAmount, 0).toLocaleString(), icon: TrendCharts, bg: 'rgba(241,174,181,0.1)', color: '#e88a94' }
+  { label: '总客户数', value: totalCount.value, icon: UserIcon, bg: 'rgba(64,158,255,0.1)', color: '#409EFF' },
+  { label: '正常状态', value: customers.value.filter(c => c.status === 1).length, icon: Ticket, bg: 'rgba(230,162,60,0.1)', color: '#E6A23C' },
+  { label: '已禁用', value: customers.value.filter(c => c.status === 0).length, icon: Money, bg: 'rgba(103,194,58,0.1)', color: '#67C23A' },
+  { label: '总数量', value: totalCount.value, icon: TrendCharts, bg: 'rgba(241,174,181,0.1)', color: '#e88a94' }
 ])
 
 function tagType(tag) {
-  const map = { 'VIP': 'warning', '意向': '', '已成交': 'success', '普通': 'info' }
+  const map = { 'VIP': 'warning', '意向': '', '已成交': 'success', '普通': 'info', '禁用': 'danger' }
   return map[tag] || 'info'
 }
 
@@ -266,8 +229,27 @@ function orderStatusType(status) {
   return map[status] || 'info'
 }
 
-function openDetail(row) {
-  detailCustomer.value = row
+async function openDetail(row) {
+  try {
+    const res = await getCustomerDetailApi(row.id)
+    if (res.data?.code === 200) {
+      const data = res.data.data
+      const user = data.user || row
+      const orders = data.orders || []
+      detailCustomer.value = {
+        ...row,
+        ...user,
+        name: user.nickname || user.username || '未设置昵称',
+        orders,
+        orderCount: orders.length,
+        totalAmount: orders.reduce((s, o) => s + (Number(o.amount) || 0), 0)
+      }
+    } else {
+      detailCustomer.value = row
+    }
+  } catch (e) {
+    detailCustomer.value = row
+  }
   detailVisible.value = true
 }
 
@@ -282,12 +264,17 @@ function editTag(customer) {
   tagDialogVisible.value = true
 }
 
-function saveTag() {
+async function saveTag() {
   if (editingCustomer.value) {
-    editingCustomer.value.tag = editingTag.value
-    customerTags.value[editingCustomer.value.phone] = editingTag.value
-    saveTags(customerTags.value)
-    ElMessage.success('标签已更新')
+    try {
+      const newStatus = editingTag.value === '禁用' ? 0 : 1
+      await updateCustomerStatusApi(editingCustomer.value.id, newStatus)
+      editingCustomer.value.status = newStatus
+      editingCustomer.value.tag = editingTag.value
+      ElMessage.success('状态已更新')
+    } catch (e) {
+      ElMessage.error('更新失败')
+    }
   }
   tagDialogVisible.value = false
 }

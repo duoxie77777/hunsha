@@ -57,9 +57,8 @@
           <el-input-number v-model="formData.price" :min="0" :step="100" controls-position="right" style="width: 200px;" />
           <span style="margin-left: 8px; color: #999;">元</span>
         </el-form-item>
-        <el-form-item label="主题色">
-          <el-color-picker v-model="formData.color" />
-          <span style="margin-left: 12px; color: #999; font-size: 0.85rem;">{{ formData.color }}</span>
+        <el-form-item label="套餐描述">
+          <el-input v-model="formData.description" type="textarea" :rows="2" placeholder="简要描述套餐" maxlength="200" show-word-limit />
         </el-form-item>
         <el-form-item label="套餐内容" prop="features">
           <div class="features-edit">
@@ -90,19 +89,13 @@
 </template>
 
 <script setup>
-import { ref, reactive } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { Plus, Edit, Delete, CircleCheck, SoldOut, Sell } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { adminGetPackagesApi, adminCreatePackageApi, adminUpdatePackageApi, adminDeletePackageApi, adminTogglePackageStatusApi } from '../../api/package'
+import { uploadImageApi } from '../../api/upload'
 
-const PKG_KEY = 'weiai_packages'
-function loadPkgs() {
-  try { return JSON.parse(localStorage.getItem(PKG_KEY) || '[]') } catch { return [] }
-}
-function savePkgsToStorage(data) {
-  localStorage.setItem(PKG_KEY, JSON.stringify(data))
-}
-
-const packages = ref(loadPkgs().length > 0 ? loadPkgs() : getDefaults())
+const packages = ref([])
 const dialogVisible = ref(false)
 const editingPkg = ref(null)
 const formRef = ref(null)
@@ -110,7 +103,8 @@ const formRef = ref(null)
 const formData = reactive({
   name: '',
   price: 0,
-  color: 'linear-gradient(135deg, #f1aeb5, #e88a94)',
+  description: '',
+  coverImage: '',
   features: [''],
   hot: false,
   online: true
@@ -121,26 +115,40 @@ const formRules = {
   price: [{ required: true, message: '请输入价格', trigger: 'blur' }]
 }
 
-function getDefaults() {
-  const list = [
-    { id: 'basic', name: '轻享套餐', price: 3999, color: 'linear-gradient(135deg, #a8c0ff, #3f7dff)', features: ['1套婚纱+1套礼服', '20张精修照片', '室内1个场景', '拍摄2小时', '赠送10寸相册1本'], hot: false, online: true },
-    { id: 'classic', name: '经典套餐', price: 7999, color: 'linear-gradient(135deg, #f1aeb5, #e88a94)', features: ['2套婚纱+1套礼服+1套便装', '40张精修照片', '室内+室外各2个场景', '拍摄半天', '赠送12寸相册1本+摆台2个', '免费化妆造型'], hot: true, online: true },
-    { id: 'luxury', name: '奢华套餐', price: 15999, color: 'linear-gradient(135deg, #c9a87c, #8B6914)', features: ['4套婚纱+2套礼服+2套便装', '80张精修照片', '4个室内+2个室外场景', '全天拍摄', '赠送18寸相册+24寸挂画', '高级化妆师+助理全程跟随', '赠送精修短视频1条'], hot: true, online: true },
-    { id: 'supreme', name: '至尊套餐', price: 29999, color: 'linear-gradient(135deg, #1a1a2e, #16213e)', features: ['不限服装数量', '120张精修照片', '不限场景', '两天拍摄', '赠送全套相册+挂画+摆台', '明星化妆师团队', '精修短视频3条', '包含外景交通住宿', 'VIP专属1对1服务'], hot: false, online: true }
-  ]
-  savePkgsToStorage(list)
-  return list
+async function loadPackages() {
+  try {
+    const res = await adminGetPackagesApi({ page: 1, size: 100 })
+    if (res.data?.code === 200) {
+      packages.value = (res.data.data?.records || []).map(p => ({
+        ...p,
+        features: p.includes || [],
+        hot: p.isHot === 1,
+        online: p.status === 1,
+        color: 'linear-gradient(135deg, #f1aeb5, #e88a94)'
+      }))
+    }
+  } catch (e) { console.error(e) }
 }
+
+onMounted(() => loadPackages())
 
 function openAddDialog() {
   editingPkg.value = null
-  Object.assign(formData, { name: '', price: 0, color: 'linear-gradient(135deg, #f1aeb5, #e88a94)', features: [''], hot: false, online: true })
+  Object.assign(formData, { name: '', price: 0, description: '', coverImage: '', features: [''], hot: false, online: true })
   dialogVisible.value = true
 }
 
 function editPkg(pkg) {
   editingPkg.value = pkg
-  Object.assign(formData, { name: pkg.name, price: pkg.price, color: pkg.color, features: [...pkg.features], hot: pkg.hot, online: pkg.online })
+  Object.assign(formData, {
+    name: pkg.name,
+    price: Number(pkg.price),
+    description: pkg.description || '',
+    coverImage: pkg.coverImage || '',
+    features: pkg.features?.length ? [...pkg.features] : [''],
+    hot: pkg.hot,
+    online: pkg.online
+  })
   dialogVisible.value = true
 }
 
@@ -152,47 +160,78 @@ function removeFeature(index) {
   formData.features.splice(index, 1)
 }
 
-function savePkg() {
-  formRef.value?.validate((valid) => {
+async function savePkg() {
+  formRef.value?.validate(async (valid) => {
     if (!valid) return
     const cleanFeatures = formData.features.filter(f => f.trim())
     if (cleanFeatures.length === 0) {
       ElMessage.warning('请至少填写一项套餐内容')
       return
     }
-    if (editingPkg.value) {
-      Object.assign(editingPkg.value, { name: formData.name, price: formData.price, color: formData.color, features: cleanFeatures, hot: formData.hot, online: formData.online })
-    } else {
-      packages.value.push({
-        id: Date.now().toString(36),
-        name: formData.name,
-        price: formData.price,
-        color: formData.color,
-        features: cleanFeatures,
-        hot: formData.hot,
-        online: formData.online
-      })
+    const payload = {
+      name: formData.name,
+      price: formData.price,
+      description: formData.description,
+      coverImage: formData.coverImage,
+      includes: cleanFeatures,
+      isHot: formData.hot ? 1 : 0,
+      status: formData.online ? 1 : 0
     }
-    savePkgsToStorage(packages.value)
-    dialogVisible.value = false
-    ElMessage.success(editingPkg.value ? '套餐已更新' : '套餐已创建')
+    try {
+      if (editingPkg.value) {
+        const res = await adminUpdatePackageApi(editingPkg.value.id, payload)
+        if (res.data?.code === 200) {
+          ElMessage.success('套餐已更新')
+          dialogVisible.value = false
+          loadPackages()
+        } else {
+          ElMessage.error(res.data?.msg || '更新失败')
+        }
+      } else {
+        const res = await adminCreatePackageApi(payload)
+        if (res.data?.code === 200) {
+          ElMessage.success('套餐已创建')
+          dialogVisible.value = false
+          loadPackages()
+        } else {
+          ElMessage.error(res.data?.msg || '创建失败')
+        }
+      }
+    } catch (e) {
+      ElMessage.error('操作失败')
+    }
   })
 }
 
-function toggleOnline(pkg) {
-  pkg.online = !pkg.online
-  savePkgsToStorage(packages.value)
-  ElMessage.success(pkg.online ? '已上架' : '已下架')
+async function toggleOnline(pkg) {
+  try {
+    const newStatus = pkg.online ? 0 : 1
+    const res = await adminTogglePackageStatusApi(pkg.id, newStatus)
+    if (res.data?.code === 200) {
+      pkg.online = !pkg.online
+      pkg.status = newStatus
+      ElMessage.success(pkg.online ? '已上架' : '已下架')
+    } else {
+      ElMessage.error(res.data?.msg || '操作失败')
+    }
+  } catch (e) {
+    ElMessage.error('操作失败')
+  }
 }
 
-function deletePkg(pkg) {
-  ElMessageBox.confirm(`确定删除套餐「${pkg.name}」吗？`, '删除确认', {
-    confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning'
-  }).then(() => {
-    packages.value = packages.value.filter(p => p.id !== pkg.id)
-    savePkgsToStorage(packages.value)
-    ElMessage.success('已删除')
-  }).catch(() => {})
+async function deletePkg(pkg) {
+  try {
+    await ElMessageBox.confirm(`确定删除套餐「${pkg.name}」吗？`, '删除确认', {
+      confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning'
+    })
+    const res = await adminDeletePackageApi(pkg.id)
+    if (res.data?.code === 200) {
+      ElMessage.success('已删除')
+      loadPackages()
+    } else {
+      ElMessage.error(res.data?.msg || '删除失败')
+    }
+  } catch (e) {}
 }
 </script>
 

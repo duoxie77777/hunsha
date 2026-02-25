@@ -31,10 +31,10 @@
             </thead>
             <tbody>
               <tr v-for="order in recentOrders" :key="order.id">
-                <td class="order-id-cell">{{ order.id }}</td>
-                <td>{{ order.name }}</td>
-                <td>{{ order.pkgLabel }}</td>
-                <td>{{ order.date }}</td>
+                <td class="order-id-cell">{{ order.orderNo }}</td>
+                <td>{{ order.contactName }}</td>
+                <td>{{ order.packageName }}</td>
+                <td>{{ order.shootDate }}</td>
                 <td>
                   <span class="status-dot" :class="statusClass(order.status)"></span>
                   {{ order.status }}
@@ -101,20 +101,43 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { Document, ChatDotRound, User, TrendCharts, Money, Calendar, UserFilled } from '@element-plus/icons-vue'
-import { userStore } from '../../stores/user'
+import { getDashboardStatsApi } from '../../api/admin'
+import { adminGetOrdersApi } from '../../api/order'
 import { chatStore } from '../../stores/chat'
 
-const allOrders = computed(() => userStore.orders || [])
-const recentOrders = computed(() => allOrders.value.slice(0, 6))
+const dashStats = ref({})
+const recentOrders = ref([])
+const loading = ref(false)
 
-const todayOrders = computed(() => {
-  const today = new Date().toLocaleDateString('zh-CN')
-  return allOrders.value.filter(o => o.createTime?.startsWith(today)).length
+onMounted(async () => {
+  loading.value = true
+  try {
+    const [statsRes, ordersRes] = await Promise.allSettled([
+      getDashboardStatsApi(),
+      adminGetOrdersApi({ page: 1, size: 6 })
+    ])
+    if (statsRes.status === 'fulfilled' && statsRes.value.data?.code === 200) {
+      dashStats.value = statsRes.value.data.data || {}
+    }
+    if (ordersRes.status === 'fulfilled' && ordersRes.value.data?.code === 200) {
+      recentOrders.value = ordersRes.value.data.data?.records || []
+    }
+  } catch (e) { console.error(e) }
+  loading.value = false
 })
 
-const pendingOrders = computed(() => allOrders.value.filter(o => o.status === '待确认').length)
+const todayOrders = computed(() => {
+  const statusMap = dashStats.value.orderStatusMap || {}
+  return statusMap['待确认'] || 0
+})
+
+const pendingOrders = computed(() => {
+  const statusMap = dashStats.value.orderStatusMap || {}
+  return statusMap['待确认'] || 0
+})
+
 const totalChats = computed(() => Object.keys(chatStore.chats).length)
 
 const unreadChats = computed(() =>
@@ -130,10 +153,10 @@ function lastMsg(chat) {
 }
 
 const stats = computed(() => [
-  { icon: Document, label: '总订单数', value: allOrders.value.length, bg: 'linear-gradient(135deg, #667eea, #764ba2)', trend: 12 },
-  { icon: Money, label: '预估营收', value: '¥' + (allOrders.value.length * 6999).toLocaleString(), bg: 'linear-gradient(135deg, #f093fb, #f5576c)', trend: 8 },
-  { icon: ChatDotRound, label: '咨询客户', value: totalChats.value, bg: 'linear-gradient(135deg, #4facfe, #00f2fe)', trend: 15 },
-  { icon: Calendar, label: '本月预约', value: allOrders.value.length, bg: 'linear-gradient(135deg, #43e97b, #38f9d7)', trend: -3 }
+  { icon: Document, label: '总订单数', value: dashStats.value.orderCount || 0, bg: 'linear-gradient(135deg, #667eea, #764ba2)', trend: 12 },
+  { icon: Money, label: '总营收', value: '¥' + (dashStats.value.totalRevenue || 0).toLocaleString(), bg: 'linear-gradient(135deg, #f093fb, #f5576c)', trend: 8 },
+  { icon: ChatDotRound, label: '注册用户', value: dashStats.value.userCount || 0, bg: 'linear-gradient(135deg, #4facfe, #00f2fe)', trend: 15 },
+  { icon: Calendar, label: '作品/评价', value: `${dashStats.value.portfolioCount || 0}/${dashStats.value.reviewCount || 0}`, bg: 'linear-gradient(135deg, #43e97b, #38f9d7)', trend: -3 }
 ])
 
 function statusClass(status) {

@@ -70,11 +70,9 @@
                 :disabled-date="disabledDate"
               />
             </el-form-item>
-            <el-form-item label="选择套餐" prop="pkg" class="form-half">
-              <el-select v-model="form.pkg" placeholder="请选择套餐" size="large" style="width:100%">
-                <el-option label="浪漫体验套餐 (¥3999)" value="basic" />
-                <el-option label="经典挚爱套餐 (¥6999)" value="classic" />
-                <el-option label="高端定制套餐 (¥12999)" value="premium" />
+            <el-form-item label="选择套餐" prop="packageId" class="form-half">
+              <el-select v-model="form.packageId" placeholder="请选择套餐" size="large" style="width:100%">
+                <el-option v-for="pkg in packageList" :key="pkg.id" :label="`${pkg.name} (¥${pkg.price})`" :value="pkg.id" />
               </el-select>
             </el-form-item>
           </div>
@@ -110,21 +108,30 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { Calendar, User, Phone, CircleCheckFilled, ChatDotRound } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { userStore } from '../stores/user'
+import { getPackagesApi } from '../api/package'
 
 const formRef = ref(null)
 const loading = ref(false)
 const submitted = ref(false)
 const lastOrderId = ref('')
+const packageList = ref([])
+
+onMounted(async () => {
+  try {
+    const res = await getPackagesApi()
+    packageList.value = res.data || []
+  } catch {}
+})
 
 const form = reactive({
   name: '',
   partnerName: '',
   date: '',
-  pkg: '',
+  packageId: '',
   styles: [],
   remark: ''
 })
@@ -132,11 +139,11 @@ const form = reactive({
 const rules = {
   name: [{ required: true, message: '请输入您的姓名', trigger: 'blur' }],
   date: [{ required: true, message: '请选择预约日期', trigger: 'change' }],
-  pkg: [{ required: true, message: '请选择套餐', trigger: 'change' }]
+  packageId: [{ required: true, message: '请选择套餐', trigger: 'change' }]
 }
 
-const pkgMap = { basic: '浪漫体验套餐', classic: '经典挚爱套餐', premium: '高端定制套餐' }
-const pkgLabel = computed(() => pkgMap[form.pkg] || '')
+const selectedPkg = computed(() => packageList.value.find(p => p.id === form.packageId))
+const pkgLabel = computed(() => selectedPkg.value?.name || '')
 
 function disabledDate(time) {
   return time.getTime() < Date.now() - 86400000
@@ -147,27 +154,27 @@ function formatDate(d) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 }
 
-function handleSubmit() {
-  formRef.value?.validate((valid) => {
+async function handleSubmit() {
+  formRef.value?.validate(async (valid) => {
     if (!valid) return
     loading.value = true
-    setTimeout(() => {
-      loading.value = false
-      // 创建订单
-      const order = userStore.addOrder({
-        name: form.name,
-        partnerName: form.partnerName,
-        phone: userStore.user?.phone,
-        date: form.date ? formatDate(form.date) : '待定',
-        pkg: form.pkg,
-        pkgLabel: pkgMap[form.pkg] || '',
-        styles: form.styles.join('、') || '未选择',
+    try {
+      const order = await userStore.addOrder({
+        packageId: form.packageId,
+        shootDate: form.date ? formatDate(form.date) : null,
+        shootTime: null,
+        contactName: form.name,
+        contactPhone: userStore.user?.phone,
         remark: form.remark
       })
-      lastOrderId.value = order.id
+      lastOrderId.value = order.orderNo || order.id
       submitted.value = true
       ElMessage.success('预约提交成功！')
-    }, 1000)
+    } catch (e) {
+      // error handled by interceptor
+    } finally {
+      loading.value = false
+    }
   })
 }
 
@@ -187,7 +194,7 @@ function handleClose() {
 function resetForm() {
   submitted.value = false
   lastOrderId.value = ''
-  Object.assign(form, { name: '', partnerName: '', date: '', pkg: '', styles: [], remark: '' })
+  Object.assign(form, { name: '', partnerName: '', date: '', packageId: '', styles: [], remark: '' })
 }
 </script>
 

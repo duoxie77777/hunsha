@@ -132,19 +132,12 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { Search, Star, StarFilled, ChatDotRound, UserFilled, Warning, Delete, Shop } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { adminGetReviewsApi, adminReplyReviewApi, adminToggleFeaturedApi, adminUpdateReviewStatusApi } from '../../api/review'
 
-const REVIEWS_KEY = 'weiai_admin_reviews'
-function loadReviews() {
-  try { return JSON.parse(localStorage.getItem(REVIEWS_KEY) || '[]') } catch { return [] }
-}
-function saveReviewsToStorage(data) {
-  localStorage.setItem(REVIEWS_KEY, JSON.stringify(data))
-}
-
-const reviews = ref(loadReviews().length > 0 ? loadReviews() : getDefaults())
+const reviews = ref([])
 const searchKey = ref('')
 const filterRating = ref('')
 const filterStatus = ref('')
@@ -154,18 +147,26 @@ const replyText = ref('')
 const previewVisible = ref(false)
 const previewSrc = ref('')
 
-function getDefaults() {
-  const list = [
-    { id: '1', customerName: '李小姐', avatar: '', date: '2026-02-20', rating: 5, content: '非常满意！摄影师非常专业，化妆师也很棒，拍了一整天都没有觉得累。成片效果超出预期，每一张都很喜欢！强烈推荐给准新娘们！', pkgName: '经典套餐', images: ['https://picsum.photos/seed/r1/200/200', 'https://picsum.photos/seed/r2/200/200'], reply: '感谢您的认可！能拍出您满意的照片是我们最大的动力，祝您新婚快乐！❤️', replied: true, featured: true },
-    { id: '2', customerName: '张先生', avatar: '', date: '2026-02-18', rating: 5, content: '从预约到拍摄到出片，整个流程都很顺畅。客服很耐心，摄影团队也很有经验。照片质量很高，已经推荐给身边的朋友了。', pkgName: '奢华套餐', images: [], reply: '感谢张先生的好评和推荐！我们会继续努力，期待您朋友的光临！', replied: true, featured: true },
-    { id: '3', customerName: '王女士', avatar: '', date: '2026-02-15', rating: 4, content: '整体不错，照片质量很好。但是当天场地有些拥挤，等待时间比较长，希望能改善一下档期安排。', pkgName: '轻享套餐', images: ['https://picsum.photos/seed/r3/200/200'], reply: '', replied: false, featured: false },
-    { id: '4', customerName: '赵先生 & 陈小姐', avatar: '', date: '2026-02-10', rating: 5, content: '至尊套餐真的物超所值！两天的拍摄体验非常棒，VIP服务很贴心，每个细节都照顾到了。照片简直是大片级别，已经在朋友圈收获了无数赞！', pkgName: '至尊套餐', images: ['https://picsum.photos/seed/r4/200/200', 'https://picsum.photos/seed/r5/200/200', 'https://picsum.photos/seed/r6/200/200'], reply: '感谢二位的认可！至尊套餐是我们的匠心之作，很高兴能给您完美的体验！', replied: true, featured: true },
-    { id: '5', customerName: '刘女士', avatar: '', date: '2026-02-05', rating: 3, content: '照片质量还可以，但感觉精修的数量有点少，有些照片的色调也不太满意。希望后期能多沟通一下风格偏好。', pkgName: '轻享套餐', images: [], reply: '', replied: false, featured: false },
-    { id: '6', customerName: '周先生', avatar: '', date: '2026-01-28', rating: 5, content: '海景婚纱照拍得太美了！摄影师很会捕捉瞬间，夕阳下的照片简直像电影画面。化妆师的造型也很时尚，妻子非常开心！', pkgName: '经典套餐', images: ['https://picsum.photos/seed/r7/200/200'], reply: '谢谢周先生的好评！海景拍摄确实是我们的特色项目，祝您和太太百年好合！', replied: true, featured: false }
-  ]
-  saveReviewsToStorage(list)
-  return list
+async function loadReviews() {
+  try {
+    const params = { page: 1, size: 100 }
+    const res = await adminGetReviewsApi(params)
+    if (res.data?.code === 200) {
+      reviews.value = (res.data.data?.records || []).map(r => ({
+        ...r,
+        customerName: r.contactName || r.nickname || `用户${r.userId}`,
+        date: r.createdAt ? r.createdAt.substring(0, 10) : '',
+        reply: r.adminReply || '',
+        replied: !!r.adminReply,
+        featured: r.isFeatured === 1,
+        pkgName: r.packageName || '',
+        avatar: r.avatar || ''
+      }))
+    }
+  } catch (e) { console.error(e) }
 }
+
+onMounted(() => loadReviews())
 
 const avgRating = computed(() => {
   if (!reviews.value.length) return '0.0'
@@ -197,29 +198,52 @@ function openReplyDialog(review) {
   replyDialogVisible.value = true
 }
 
-function submitReply() {
+async function submitReply() {
   if (!replyText.value.trim() || !replyingReview.value) return
-  replyingReview.value.reply = replyText.value.trim()
-  replyingReview.value.replied = true
-  saveReviewsToStorage(reviews.value)
-  replyDialogVisible.value = false
-  ElMessage.success('回复成功')
+  try {
+    const res = await adminReplyReviewApi(replyingReview.value.id, replyText.value.trim())
+    if (res.data?.code === 200) {
+      replyingReview.value.reply = replyText.value.trim()
+      replyingReview.value.adminReply = replyText.value.trim()
+      replyingReview.value.replied = true
+      replyDialogVisible.value = false
+      ElMessage.success('回复成功')
+    } else {
+      ElMessage.error(res.data?.msg || '回复失败')
+    }
+  } catch (e) {
+    ElMessage.error('回复失败')
+  }
 }
 
-function toggleFeatured(review) {
-  review.featured = !review.featured
-  saveReviewsToStorage(reviews.value)
-  ElMessage.success(review.featured ? '已设为精选' : '已取消精选')
+async function toggleFeatured(review) {
+  try {
+    const res = await adminToggleFeaturedApi(review.id)
+    if (res.data?.code === 200) {
+      review.featured = !review.featured
+      review.isFeatured = review.featured ? 1 : 0
+      ElMessage.success(review.featured ? '已设为精选' : '已取消精选')
+    } else {
+      ElMessage.error(res.data?.msg || '操作失败')
+    }
+  } catch (e) {
+    ElMessage.error('操作失败')
+  }
 }
 
-function deleteReview(review) {
-  ElMessageBox.confirm(`确定删除「${review.customerName}」的评价吗？`, '删除确认', {
-    confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning'
-  }).then(() => {
-    reviews.value = reviews.value.filter(r => r.id !== review.id)
-    saveReviewsToStorage(reviews.value)
-    ElMessage.success('已删除')
-  }).catch(() => {})
+async function deleteReview(review) {
+  try {
+    await ElMessageBox.confirm(`确定删除「${review.customerName}」的评价吗？`, '删除确认', {
+      confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning'
+    })
+    const res = await adminUpdateReviewStatusApi(review.id, 0)
+    if (res.data?.code === 200) {
+      reviews.value = reviews.value.filter(r => r.id !== review.id)
+      ElMessage.success('已删除')
+    } else {
+      ElMessage.error(res.data?.msg || '删除失败')
+    }
+  } catch (e) {}
 }
 
 function previewImage(src) {

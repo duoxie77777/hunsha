@@ -86,21 +86,15 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { Search, Plus, Star, Edit, Delete } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-
-const WORKS_KEY = 'weiai_works'
-function loadWorks() {
-  try { return JSON.parse(localStorage.getItem(WORKS_KEY) || '[]') } catch { return [] }
-}
-function saveWorksToStorage(data) {
-  localStorage.setItem(WORKS_KEY, JSON.stringify(data))
-}
+import { adminGetPortfoliosApi, adminCreatePortfolioApi, adminUpdatePortfolioApi, adminDeletePortfolioApi } from '../../api/portfolio'
+import { uploadImageApi } from '../../api/upload'
 
 const categories = ['韩式婚纱', '中式婚纱', '森系清新', '海景婚纱', '城市街拍', '复古胶片', '轻奢简约', '旅拍纪实']
 
-const works = ref(loadWorks().length > 0 ? loadWorks() : getDefaultWorks())
+const works = ref([])
 const searchKey = ref('')
 const filterCategory = ref('')
 const dialogVisible = ref(false)
@@ -108,6 +102,7 @@ const editingWork = ref(null)
 const saving = ref(false)
 const formRef = ref(null)
 const coverInputRef = ref(null)
+const coverFile = ref(null)
 
 const formData = reactive({
   cover: '',
@@ -124,6 +119,22 @@ const rules = {
   category: [{ required: true, message: '请选择分类', trigger: 'change' }]
 }
 
+async function loadWorks() {
+  try {
+    const res = await adminGetPortfoliosApi({ page: 1, size: 100 })
+    if (res.data?.code === 200) {
+      works.value = (res.data.data?.records || []).map(w => ({
+        ...w,
+        cover: w.coverImage || '',
+        featured: w.isRecommended === 1,
+        date: w.createdAt ? w.createdAt.substring(0, 10) : ''
+      }))
+    }
+  } catch (e) { console.error(e) }
+}
+
+onMounted(() => loadWorks())
+
 const filteredWorks = computed(() => {
   let list = works.value
   if (filterCategory.value) list = list.filter(w => w.category === filterCategory.value)
@@ -134,27 +145,16 @@ const filteredWorks = computed(() => {
   return list
 })
 
-function getDefaultWorks() {
-  const defaults = [
-    { id: '1', cover: 'https://picsum.photos/seed/wed1/400/300', title: '浪漫海岸线', category: '海景婚纱', date: '2026-01-15', description: '三亚海棠湾日落时分拍摄，金色光线与碧蓝海水完美搭配', featured: true },
-    { id: '2', cover: 'https://picsum.photos/seed/wed2/400/300', title: '古镇晨曦', category: '中式婚纱', date: '2026-01-20', description: '乌镇清晨拍摄，青石板路上的中式嫁衣别有韵味', featured: true },
-    { id: '3', cover: 'https://picsum.photos/seed/wed3/400/300', title: '首尔恋曲', category: '韩式婚纱', date: '2025-12-28', description: '韩式唯美风格，粉色樱花树下的浪漫', featured: false },
-    { id: '4', cover: 'https://picsum.photos/seed/wed4/400/300', title: '森林之约', category: '森系清新', date: '2025-12-10', description: '自然光线下的森系婚纱照，清新脱俗', featured: false },
-    { id: '5', cover: 'https://picsum.photos/seed/wed5/400/300', title: '都市光影', category: '城市街拍', date: '2026-02-01', description: '上海外滩城市街拍，现代与经典的碰撞', featured: true },
-    { id: '6', cover: 'https://picsum.photos/seed/wed6/400/300', title: '胶片时光', category: '复古胶片', date: '2025-11-22', description: '复古胶片质感，记录最真实的幸福瞬间', featured: false }
-  ]
-  saveWorksToStorage(defaults)
-  return defaults
-}
-
 function openAddDialog() {
   editingWork.value = null
+  coverFile.value = null
   Object.assign(formData, { cover: '', title: '', category: '', date: '', description: '', featured: false })
   dialogVisible.value = true
 }
 
 function editWork(work) {
   editingWork.value = work
+  coverFile.value = null
   Object.assign(formData, { cover: work.cover, title: work.title, category: work.category, date: work.date, description: work.description, featured: work.featured })
   dialogVisible.value = true
 }
@@ -166,6 +166,7 @@ function triggerCoverUpload() {
 function handleCoverUpload(e) {
   const file = e.target.files?.[0]
   if (!file) return
+  coverFile.value = file
   const reader = new FileReader()
   reader.onload = (ev) => {
     formData.cover = ev.target.result
@@ -173,43 +174,78 @@ function handleCoverUpload(e) {
   reader.readAsDataURL(file)
 }
 
-function saveWork() {
-  formRef.value?.validate((valid) => {
+async function saveWork() {
+  formRef.value?.validate(async (valid) => {
     if (!valid) return
     saving.value = true
-    setTimeout(() => {
-      if (editingWork.value) {
-        Object.assign(editingWork.value, { ...formData })
-      } else {
-        works.value.unshift({
-          id: Date.now().toString(36),
-          ...formData
-        })
+    try {
+      let coverUrl = formData.cover
+      if (coverFile.value) {
+        const uploadRes = await uploadImageApi(coverFile.value)
+        if (uploadRes.data?.code === 200) {
+          coverUrl = uploadRes.data.data
+        }
       }
-      saveWorksToStorage(works.value)
-      saving.value = false
-      dialogVisible.value = false
-      ElMessage.success(editingWork.value ? '作品已更新' : '作品已上传')
-    }, 500)
+      const payload = {
+        title: formData.title,
+        description: formData.description,
+        coverImage: coverUrl,
+        category: formData.category,
+        isRecommended: formData.featured ? 1 : 0,
+        status: 1
+      }
+      if (editingWork.value) {
+        const res = await adminUpdatePortfolioApi(editingWork.value.id, payload)
+        if (res.data?.code === 200) {
+          ElMessage.success('作品已更新')
+          dialogVisible.value = false
+          loadWorks()
+        } else {
+          ElMessage.error(res.data?.msg || '更新失败')
+        }
+      } else {
+        const res = await adminCreatePortfolioApi(payload)
+        if (res.data?.code === 200) {
+          ElMessage.success('作品已上传')
+          dialogVisible.value = false
+          loadWorks()
+        } else {
+          ElMessage.error(res.data?.msg || '创建失败')
+        }
+      }
+    } catch (e) {
+      ElMessage.error('操作失败')
+    }
+    saving.value = false
   })
 }
 
-function toggleFeatured(work) {
-  work.featured = !work.featured
-  saveWorksToStorage(works.value)
-  ElMessage.success(work.featured ? '已设为推荐' : '已取消推荐')
+async function toggleFeatured(work) {
+  try {
+    const newVal = work.featured ? 0 : 1
+    const res = await adminUpdatePortfolioApi(work.id, { isRecommended: newVal })
+    if (res.data?.code === 200) {
+      work.featured = !work.featured
+      ElMessage.success(work.featured ? '已设为推荐' : '已取消推荐')
+    }
+  } catch (e) {
+    ElMessage.error('操作失败')
+  }
 }
 
-function deleteWork(work) {
-  ElMessageBox.confirm(`确定删除作品「${work.title}」吗？`, '删除确认', {
-    confirmButtonText: '删除',
-    cancelButtonText: '取消',
-    type: 'warning'
-  }).then(() => {
-    works.value = works.value.filter(w => w.id !== work.id)
-    saveWorksToStorage(works.value)
-    ElMessage.success('已删除')
-  }).catch(() => {})
+async function deleteWork(work) {
+  try {
+    await ElMessageBox.confirm(`确定删除作品「${work.title}」吗？`, '删除确认', {
+      confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning'
+    })
+    const res = await adminDeletePortfolioApi(work.id)
+    if (res.data?.code === 200) {
+      ElMessage.success('已删除')
+      loadWorks()
+    } else {
+      ElMessage.error(res.data?.msg || '删除失败')
+    }
+  } catch (e) {}
 }
 </script>
 

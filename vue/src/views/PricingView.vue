@@ -129,15 +129,34 @@
 </template>
 
 <script setup>
-import { reactive } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { Select, Picture, Camera, Goods, Film, PictureFilled, Location, InfoFilled } from '@element-plus/icons-vue'
 import { userStore } from '../stores/user'
+import { getPackagesApi } from '../api/package'
 
-const packages = [
+const packages = ref([
   { name: '浪漫体验套餐', price: '¥3999', duration: '1天', popular: false, features: ['室内拍摄场景3个', '服装造型各3套', '拍摄照片150张以上', '精修照片20张', '10寸水晶相册1本', '24寸放大相框1个', '底片全送', '资深摄影师拍摄'] },
   { name: '经典挚爱套餐', price: '¥6999', duration: '1天', popular: true, features: ['室内+外景共5个场景', '服装造型各5套', '拍摄照片300张以上', '精修照片40张', '16寸水晶相册2本', '36寸放大相框1个', '底片全送+视频花絮', '首席摄影师拍摄'] },
   { name: '高端定制套餐', price: '¥12999', duration: '2天', popular: false, features: ['多场景定制拍摄', '服装造型不限套数', '拍摄照片500张以上', '精修照片80张', '高端定制相册3本', '全屋相框组合', '微电影+底片全送', '总监级摄影师拍摄'] }
-]
+])
+
+const packageOptions = ref([])
+
+onMounted(async () => {
+  try {
+    const res = await getPackagesApi()
+    if (res.data?.length) {
+      packageOptions.value = res.data
+      packages.value = res.data.map(p => ({
+        name: p.name,
+        price: '¥' + p.price,
+        duration: '-',
+        popular: p.isHot === 1,
+        features: p.includes || []
+      }))
+    }
+  } catch {}
+})
 
 const comparisonData = [
   { feature: '拍摄天数', basic: '1天', classic: '1天', premium: '2天' },
