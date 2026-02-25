@@ -4,6 +4,7 @@
     <div v-show="!chatOpen" class="fab-wrapper" @click="openChat">
       <div class="fab-btn">
         <el-icon :size="26"><ChatDotRound /></el-icon>
+        <span v-if="unreadCount > 0" class="fab-badge">{{ unreadCount > 9 ? '9+' : unreadCount }}</span>
       </div>
       <div class="fab-pulse"></div>
       <span class="fab-label">在线客服</span>
@@ -23,7 +24,7 @@
             <h4>唯爱专属客服</h4>
             <div class="status-row">
               <span class="online-dot"></span>
-              <span class="online-text">在线 · 平均响应 &lt; 1分钟</span>
+              <span class="online-text">在线</span>
             </div>
           </div>
         </div>
@@ -55,18 +56,24 @@
 
       <!-- 消息区域 -->
       <div class="chat-messages" ref="messagesRef">
-        <!-- 日期分隔 -->
-        <div class="date-divider">
-          <span>{{ todayStr }}</span>
+        <div v-if="loading" class="loading-tip">加载中...</div>
+
+        <div v-if="!loading && messages.length === 0" class="welcome-msg">
+          <div class="msg-avatar">
+            <el-icon :size="18" color="#fff"><Headset /></el-icon>
+          </div>
+          <div class="msg-bubble cs">
+            您好！我是唯爱婚纱摄影的客服 ❤️<br/>有任何问题都可以发消息给我们哦~
+          </div>
         </div>
 
         <div
-          v-for="(msg, idx) in messages"
-          :key="idx"
+          v-for="msg in messages"
+          :key="msg.id"
           class="chat-msg"
-          :class="msg.from"
+          :class="msg.senderId === 0 ? 'cs' : 'user'"
         >
-          <div class="msg-avatar" v-if="msg.from === 'cs'">
+          <div class="msg-avatar" v-if="msg.senderId === 0">
             <el-icon :size="18" color="#fff"><Headset /></el-icon>
           </div>
           <div class="msg-avatar user-avatar" v-else>
@@ -76,64 +83,27 @@
             <el-icon v-else :size="18" color="#fff"><User /></el-icon>
           </div>
 
-          <div class="msg-content" :class="msg.from">
-            <span class="msg-sender" v-if="msg.from === 'cs'">客服小爱</span>
-            <div class="msg-bubble" :class="msg.from">
-              <!-- 订单卡片 -->
+          <div class="msg-content" :class="msg.senderId === 0 ? 'cs' : 'user'">
+            <span class="msg-sender" v-if="msg.senderId === 0">客服</span>
+            <div class="msg-bubble" :class="msg.senderId === 0 ? 'cs' : 'user'">
               <div v-if="msg.type === 'order'" class="order-card-msg">
                 <div class="order-card-header-bar">
                   <el-icon :size="16"><Document /></el-icon>
                   <span>预约订单</span>
-                  <span class="order-status-tag">待确认</span>
                 </div>
                 <div class="order-card-body">
-                  <div class="order-card-row">
-                    <span class="label">订单号</span>
-                    <span class="value highlight">{{ msg.order.id }}</span>
-                  </div>
-                  <div class="order-card-row">
-                    <span class="label">套餐</span>
-                    <span class="value">{{ msg.order.pkgLabel }}</span>
-                  </div>
-                  <div class="order-card-row">
-                    <span class="label">日期</span>
-                    <span class="value">{{ msg.order.date || '待定' }}</span>
-                  </div>
-                  <div class="order-card-row">
-                    <span class="label">风格</span>
-                    <span class="value">{{ msg.order.styles || '未选择' }}</span>
-                  </div>
+                  <p>{{ msg.content }}</p>
                 </div>
               </div>
-              <!-- 普通文本 -->
-              <div v-else class="msg-text" v-html="msg.text"></div>
+              <div v-else class="msg-text" v-html="msg.content"></div>
             </div>
-            <span class="msg-time">{{ msg.time }}</span>
-          </div>
-        </div>
-
-        <!-- 客服正在输入 -->
-        <div v-if="csTyping" class="chat-msg cs">
-          <div class="msg-avatar">
-            <el-icon :size="18" color="#fff"><Headset /></el-icon>
-          </div>
-          <div class="msg-content cs">
-            <span class="msg-sender">客服小爱</span>
-            <div class="msg-bubble cs typing-bubble">
-              <span class="typing-dot"></span>
-              <span class="typing-dot"></span>
-              <span class="typing-dot"></span>
-            </div>
+            <span class="msg-time">{{ formatTime(msg.createdAt) }}</span>
           </div>
         </div>
       </div>
 
       <!-- 输入区域 -->
       <div class="chat-input-area">
-        <div class="input-toolbar">
-          <button class="toolbar-btn" title="表情">😊</button>
-          <button class="toolbar-btn" title="图片">📷</button>
-        </div>
         <div class="input-row">
           <el-input
             v-model="inputText"
@@ -146,7 +116,7 @@
           <button
             class="send-btn"
             :class="{ active: inputText.trim() }"
-            :disabled="!inputText.trim() || csTyping"
+            :disabled="!inputText.trim() || sending"
             @click="sendMessage"
           >
             <el-icon :size="20"><Promotion /></el-icon>
@@ -158,33 +128,24 @@
 </template>
 
 <script setup>
-import { ref, watch, nextTick, computed } from 'vue'
+import { ref, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { Headset, User, Document, ChatDotRound, Close, Minus, PriceTag, Calendar, Picture, Present, Promotion } from '@element-plus/icons-vue'
 import { userStore } from '../stores/user'
-import { chatStore } from '../stores/chat'
+import { sendMessageApi, getMessagesApi, getUnreadCountApi } from '../api/chat'
 
 const messagesRef = ref(null)
 const inputText = ref('')
-const csTyping = ref(false)
 const chatOpen = ref(false)
+const loading = ref(false)
+const sending = ref(false)
+const messages = ref([])
+const unreadCount = ref(0)
 let pollTimer = null
 
-const todayStr = computed(() => {
-  const d = new Date()
-  return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`
-})
-
-// 从 chatStore 读取当前用户的消息
-const messages = computed(() => {
-  const phone = userStore.user?.phone
-  if (!phone) return []
-  const chat = chatStore.getChat(phone)
-  return chat?.messages || []
-})
-
-function getTime() {
-  const now = new Date()
-  return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+function formatTime(dateStr) {
+  if (!dateStr) return ''
+  const d = new Date(dateStr)
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
 function scrollToBottom() {
@@ -195,76 +156,54 @@ function scrollToBottom() {
   })
 }
 
-function addUserMessage(msg) {
-  const phone = userStore.user?.phone
-  if (!phone) return
-  chatStore.addMessage(phone, msg, {
-    nickname: userStore.user.nickname,
-    avatar: userStore.user.avatar
-  })
+async function loadMessages() {
+  if (!userStore.user) return
+  loading.value = true
+  try {
+    const res = await getMessagesApi()
+    messages.value = res.data || []
+    unreadCount.value = 0
+  } catch (e) {
+    console.error('加载消息失败', e)
+  }
+  loading.value = false
   scrollToBottom()
 }
 
-function sendOrderCard(order) {
-  addUserMessage({
-    from: 'user',
-    type: 'order',
-    order: {
-      id: order.id,
-      pkgLabel: order.pkgLabel,
-      date: order.date,
-      styles: order.styles
-    },
-    time: getTime()
-  })
-
-  // 自动回复（如果商家未在线则模拟）
-  csTyping.value = true
-  scrollToBottom()
-  setTimeout(() => {
-    csTyping.value = false
-    addCsAutoReply(`收到您的预约订单 <strong>${order.id}</strong>，我马上为您安排！`)
-  }, 1500)
-  setTimeout(() => {
-    addCsAutoReply('请问您对拍摄场地有偏好吗？我们有室内影棚、户外花园、海边沙滩等多种场景可选 😊')
-  }, 3500)
+async function loadUnread() {
+  if (!userStore.user) return
+  try {
+    const res = await getUnreadCountApi()
+    unreadCount.value = res.data || 0
+  } catch (e) {}
 }
 
-function addCsAutoReply(text) {
-  const phone = userStore.user?.phone
-  if (!phone) return
-  chatStore.addMessage(phone, { from: 'cs', text, time: getTime() }, {
-    nickname: userStore.user.nickname,
-    avatar: userStore.user.avatar
-  })
-  scrollToBottom()
-}
-
-function sendMessage() {
+async function sendMessage() {
   const text = inputText.value.trim()
-  if (!text || csTyping.value) return
+  if (!text || sending.value || !userStore.user) return
 
-  addUserMessage({ from: 'user', text, time: getTime() })
-  inputText.value = ''
+  sending.value = true
+  try {
+    const res = await sendMessageApi({ content: text, type: 'text' })
+    messages.value.push(res.data)
+    inputText.value = ''
+    scrollToBottom()
+  } catch (e) {
+    console.error('发送失败', e)
+  }
+  sending.value = false
+}
 
-  // 模拟客服自动回复（当商家端未回复时）
-  const replies = [
-    '好的呢，我已经帮您记录了，稍后专属顾问会与您联系确认细节~',
-    '没问题！我们的摄影团队经验非常丰富，一定能拍出您满意的效果 😊',
-    '您的预约我们非常重视，会优先为您安排最合适的档期哦~',
-    '感谢您的信任！还有其他问题的话，随时可以问我~',
-    '收到！我已经备注好了，拍摄当天我们会提前跟您确认的~',
-    '这个套餐非常受欢迎呢！很多新人选了都特别满意 ❤️',
-    '没问题，我帮您查看下最近的可用档期，稍等一下~'
-  ]
-  csTyping.value = true
-  scrollToBottom()
-  const delay = 1200 + Math.random() * 800
-  setTimeout(() => {
-    csTyping.value = false
-    const reply = replies[Math.floor(Math.random() * replies.length)]
-    addCsAutoReply(reply)
-  }, delay)
+async function sendOrderCard(order) {
+  if (!userStore.user) return
+  const content = `预约订单: ${order.pkgLabel || order.packageName || ''}, 日期: ${order.date || order.shootDate || '待定'}`
+  try {
+    const res = await sendMessageApi({ content, type: 'order' })
+    messages.value.push(res.data)
+    scrollToBottom()
+  } catch (e) {
+    console.error('发送订单卡片失败', e)
+  }
 }
 
 function quickSend(text) {
@@ -274,15 +213,7 @@ function quickSend(text) {
 
 function openChat() {
   chatOpen.value = true
-  const phone = userStore.user?.phone
-  if (phone) {
-    const chat = chatStore.getChat(phone)
-    if (!chat || !chat.messages.length) {
-      initWelcome()
-    }
-    chatStore.clearUnreadUser(phone)
-  }
-  scrollToBottom()
+  loadMessages()
   startPoll()
 }
 
@@ -297,27 +228,17 @@ function closeChat() {
   stopPoll()
 }
 
-function initWelcome() {
-  const phone = userStore.user?.phone
-  if (!phone) return
-  const name = userStore.user?.nickname || '亲'
-  chatStore.ensureChat(phone, { nickname: userStore.user.nickname, avatar: userStore.user.avatar })
-  chatStore.addMessage(phone, {
-    from: 'cs',
-    text: `${name}，您好！我是唯爱婚纱摄影的专属客服小爱 ❤️<br/>很高兴为您服务！有任何关于婚纱拍摄的问题都可以问我哦~`,
-    time: getTime()
-  }, { nickname: userStore.user.nickname, avatar: userStore.user.avatar })
-}
-
-// 轮询检测商家发来的新消息（模拟实时）
+// 轮询新消息（每1秒）
 function startPoll() {
   stopPoll()
-  pollTimer = setInterval(() => {
-    const phone = userStore.user?.phone
-    if (!phone || !chatOpen.value) return
-    chatStore.clearUnreadUser(phone)
-    scrollToBottom()
-  }, 2000)
+  pollTimer = setInterval(async () => {
+    if (!chatOpen.value || !userStore.user) return
+    try {
+      const res = await getMessagesApi()
+      messages.value = res.data || []
+      scrollToBottom()
+    } catch (e) {}
+  }, 1000)
 }
 
 function stopPoll() {
@@ -327,28 +248,34 @@ function stopPoll() {
   }
 }
 
-// 监听 store 的 showChat 变化（预约提交后会触发）
+// 未登录时定期检查未读数
+let unreadTimer = null
+onMounted(() => {
+  loadUnread()
+  unreadTimer = setInterval(() => {
+    if (!chatOpen.value) loadUnread()
+  }, 15000)
+})
+
+onUnmounted(() => {
+  stopPoll()
+  if (unreadTimer) clearInterval(unreadTimer)
+})
+
+// 监听 showChat（预约后自动弹出）
 watch(() => userStore.showChat, (val) => {
-  if (val) {
+  if (val && userStore.user) {
     chatOpen.value = true
-    const phone = userStore.user?.phone
-    if (phone) {
-      const chat = chatStore.getChat(phone)
-      if (!chat || !chat.messages.length) {
-        initWelcome()
-      }
-    }
+    loadMessages()
     if (userStore.currentOrder) {
       setTimeout(() => {
         sendOrderCard(userStore.currentOrder)
-      }, 1000)
+      }, 500)
     }
     startPoll()
-    scrollToBottom()
   }
 })
 
-// 监听消息数量变化自动滚底
 watch(() => messages.value.length, () => {
   scrollToBottom()
 })
@@ -385,6 +312,24 @@ watch(() => messages.value.length, () => {
 .fab-btn:hover {
   transform: scale(1.1);
   box-shadow: 0 8px 30px rgba(241, 174, 181, 0.65);
+}
+
+.fab-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  background: #e74c3c;
+  color: #fff;
+  font-size: 0.65rem;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+  font-weight: 700;
+  border: 2px solid #fff;
 }
 
 .fab-pulse {
@@ -441,7 +386,6 @@ watch(() => messages.value.length, () => {
   overflow: hidden;
 }
 
-/* 头部 */
 .chat-panel-header {
   display: flex;
   align-items: center;
@@ -515,13 +459,8 @@ watch(() => messages.value.length, () => {
   transition: all 0.2s;
 }
 
-.header-action-btn:hover {
-  background: rgba(255, 255, 255, 0.35);
-}
-
-.close-action:hover {
-  background: rgba(220, 53, 69, 0.6);
-}
+.header-action-btn:hover { background: rgba(255, 255, 255, 0.35); }
+.close-action:hover { background: rgba(220, 53, 69, 0.6); }
 
 /* 快捷操作 */
 .quick-actions {
@@ -533,9 +472,7 @@ watch(() => messages.value.length, () => {
   background: #fafafa;
 }
 
-.quick-actions::-webkit-scrollbar {
-  height: 0;
-}
+.quick-actions::-webkit-scrollbar { height: 0; }
 
 .quick-btn {
   display: flex;
@@ -570,30 +507,32 @@ watch(() => messages.value.length, () => {
   background: #f8f9fb;
 }
 
-.chat-messages::-webkit-scrollbar {
-  width: 5px;
-}
+.chat-messages::-webkit-scrollbar { width: 5px; }
+.chat-messages::-webkit-scrollbar-track { background: transparent; }
+.chat-messages::-webkit-scrollbar-thumb { background: #ddd; border-radius: 3px; }
 
-.chat-messages::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.chat-messages::-webkit-scrollbar-thumb {
-  background: #ddd;
-  border-radius: 3px;
-}
-
-.date-divider {
+.loading-tip {
   text-align: center;
-  padding: 8px 0;
+  color: #ccc;
+  font-size: 0.85rem;
+  padding: 20px;
 }
 
-.date-divider span {
-  background: #e8e8e8;
-  color: #999;
-  font-size: 0.72rem;
-  padding: 3px 12px;
-  border-radius: 10px;
+.welcome-msg {
+  display: flex;
+  gap: 10px;
+  align-self: flex-start;
+}
+
+.welcome-msg .msg-bubble {
+  padding: 12px 16px;
+  border-radius: 16px;
+  background: #fff;
+  color: #333;
+  border-top-left-radius: 4px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
+  font-size: 0.9rem;
+  line-height: 1.6;
 }
 
 .chat-msg {
@@ -608,14 +547,8 @@ watch(() => messages.value.length, () => {
   to { opacity: 1; transform: translateY(0); }
 }
 
-.chat-msg.cs {
-  align-self: flex-start;
-}
-
-.chat-msg.user {
-  align-self: flex-end;
-  flex-direction: row-reverse;
-}
+.chat-msg.cs { align-self: flex-start; }
+.chat-msg.user { align-self: flex-end; flex-direction: row-reverse; }
 
 .msg-avatar {
   width: 36px;
@@ -646,9 +579,7 @@ watch(() => messages.value.length, () => {
   gap: 3px;
 }
 
-.msg-content.user {
-  align-items: flex-end;
-}
+.msg-content.user { align-items: flex-end; }
 
 .msg-sender {
   font-size: 0.72rem;
@@ -685,14 +616,10 @@ watch(() => messages.value.length, () => {
   padding: 0 2px;
 }
 
-.msg-content.user .msg-time {
-  text-align: right;
-}
+.msg-content.user .msg-time { text-align: right; }
 
 /* 订单卡片 */
-.order-card-msg {
-  min-width: 240px;
-}
+.order-card-msg { min-width: 240px; }
 
 .order-card-header-bar {
   display: flex;
@@ -700,73 +627,16 @@ watch(() => messages.value.length, () => {
   gap: 6px;
   font-weight: 700;
   font-size: 0.9rem;
-  margin-bottom: 12px;
-  padding-bottom: 10px;
+  margin-bottom: 8px;
+  padding-bottom: 8px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.25);
   color: #fff;
 }
 
-.order-status-tag {
-  margin-left: auto;
-  font-size: 0.7rem;
-  padding: 2px 8px;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.25);
-  font-weight: 600;
-}
-
-.order-card-body {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.order-card-row {
-  display: flex;
-  justify-content: space-between;
-  font-size: 0.82rem;
-}
-
-.order-card-row .label {
-  opacity: 0.75;
-}
-
-.order-card-row .value {
-  font-weight: 600;
-  max-width: 150px;
-  text-align: right;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.order-card-row .value.highlight {
-  font-family: monospace;
-  letter-spacing: 0.5px;
-}
-
-/* 打字动画 */
-.typing-bubble {
-  display: flex;
-  gap: 5px;
-  align-items: center;
-  padding: 14px 20px !important;
-}
-
-.typing-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #ccc;
-  animation: typing 1.4s infinite ease-in-out;
-}
-
-.typing-dot:nth-child(2) { animation-delay: 0.2s; }
-.typing-dot:nth-child(3) { animation-delay: 0.4s; }
-
-@keyframes typing {
-  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
-  30% { transform: translateY(-6px); opacity: 1; }
+.order-card-body p {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.5;
 }
 
 /* ========== 输入区域 ========== */
@@ -775,35 +645,11 @@ watch(() => messages.value.length, () => {
   background: #fff;
 }
 
-.input-toolbar {
-  display: flex;
-  gap: 4px;
-  padding: 8px 16px 0;
-}
-
-.toolbar-btn {
-  width: 32px;
-  height: 32px;
-  border: none;
-  background: none;
-  font-size: 1.1rem;
-  cursor: pointer;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background 0.2s;
-}
-
-.toolbar-btn:hover {
-  background: #f5f5f5;
-}
-
 .input-row {
   display: flex;
   align-items: flex-end;
   gap: 8px;
-  padding: 4px 16px 14px;
+  padding: 10px 16px 14px;
 }
 
 .input-row :deep(.el-textarea__inner) {
@@ -841,9 +687,7 @@ watch(() => messages.value.length, () => {
   box-shadow: 0 3px 12px rgba(241, 174, 181, 0.4);
 }
 
-.send-btn.active:hover {
-  transform: scale(1.05);
-}
+.send-btn.active:hover { transform: scale(1.05); }
 
 /* ========== 动画 ========== */
 .fab-pop-enter-active,
@@ -883,9 +727,7 @@ watch(() => messages.value.length, () => {
     bottom: 16px;
   }
 
-  .fab-label {
-    display: none;
-  }
+  .fab-label { display: none; }
 }
 
 @media (min-width: 769px) and (max-width: 1024px) {

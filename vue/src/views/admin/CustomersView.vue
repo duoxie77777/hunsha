@@ -179,20 +179,18 @@ async function loadCustomers() {
     const params = { page: 1, size: 100 }
     if (searchKey.value.trim()) params.keyword = searchKey.value.trim()
     const res = await getCustomersApi(params)
-    if (res.data?.code === 200) {
-      const records = res.data.data?.records || []
-      customers.value = records.map(u => ({
-        ...u,
-        name: u.nickname || u.username || '未设置昵称',
-        tag: u.status === 1 ? '普通' : '禁用',
-        orderCount: 0,
-        totalAmount: 0,
-        lastContact: u.createdAt || '-',
-        registerTime: u.createdAt || '-',
-        orders: []
-      }))
-      totalCount.value = res.data.data?.total || 0
-    }
+    const records = res.data?.records || []
+    customers.value = records.map(u => ({
+      ...u,
+      name: u.nickname || u.username || '未设置昵称',
+      tag: u.status === 1 ? '普通' : '禁用',
+      orderCount: 0,
+      totalAmount: 0,
+      lastContact: u.createdAt || '-',
+      registerTime: u.createdAt || '-',
+      orders: []
+    }))
+    totalCount.value = res.data?.total || 0
   } catch (e) { console.error(e) }
 }
 
@@ -232,20 +230,16 @@ function orderStatusType(status) {
 async function openDetail(row) {
   try {
     const res = await getCustomerDetailApi(row.id)
-    if (res.data?.code === 200) {
-      const data = res.data.data
-      const user = data.user || row
-      const orders = data.orders || []
-      detailCustomer.value = {
-        ...row,
-        ...user,
-        name: user.nickname || user.username || '未设置昵称',
-        orders,
-        orderCount: orders.length,
-        totalAmount: orders.reduce((s, o) => s + (Number(o.amount) || 0), 0)
-      }
-    } else {
-      detailCustomer.value = row
+    const data = res.data
+    const user = data.user || row
+    const orders = data.orders || []
+    detailCustomer.value = {
+      ...row,
+      ...user,
+      name: user.nickname || user.username || '未设置昵称',
+      orders,
+      orderCount: orders.length,
+      totalAmount: orders.reduce((s, o) => s + (Number(o.amount) || 0), 0)
     }
   } catch (e) {
     detailCustomer.value = row

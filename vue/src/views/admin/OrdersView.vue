@@ -73,7 +73,6 @@ import { ref, onMounted, watch } from 'vue'
 import { Search, ChatDotRound } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { adminGetOrdersApi, adminUpdateOrderStatusApi } from '../../api/order'
-import { chatStore } from '../../stores/chat'
 import { useRouter } from 'vue-router'
 
 const router = useRouter()
@@ -90,10 +89,8 @@ async function loadOrders() {
     if (statusFilter.value) params.status = statusFilter.value
     if (search.value.trim()) params.contactName = search.value.trim()
     const res = await adminGetOrdersApi(params)
-    if (res.data?.code === 200) {
-      orderList.value = res.data.data?.records || []
-      totalCount.value = res.data.data?.total || 0
-    }
+    orderList.value = res.data?.records || []
+    totalCount.value = res.data?.total || 0
   } catch (e) { console.error(e) }
 }
 
@@ -114,13 +111,9 @@ async function confirmOrder(order) {
     await ElMessageBox.confirm(`确认接受订单 ${order.orderNo}？`, '确认订单', {
       confirmButtonText: '确认', cancelButtonText: '取消', type: 'success'
     })
-    const res = await adminUpdateOrderStatusApi(order.id, '已确认')
-    if (res.data?.code === 200) {
-      ElMessage.success('订单已确认')
-      loadOrders()
-    } else {
-      ElMessage.error(res.data?.msg || '操作失败')
-    }
+    await adminUpdateOrderStatusApi(order.id, '已确认')
+    ElMessage.success('订单已确认')
+    loadOrders()
   } catch (e) {}
 }
 
@@ -129,13 +122,9 @@ async function completeOrder(order) {
     await ElMessageBox.confirm(`标记订单 ${order.orderNo} 为已完成？`, '完成订单', {
       confirmButtonText: '确认', cancelButtonText: '取消', type: 'success'
     })
-    const res = await adminUpdateOrderStatusApi(order.id, '已完成')
-    if (res.data?.code === 200) {
-      ElMessage.success('订单已完成')
-      loadOrders()
-    } else {
-      ElMessage.error(res.data?.msg || '操作失败')
-    }
+    await adminUpdateOrderStatusApi(order.id, '已完成')
+    ElMessage.success('订单已完成')
+    loadOrders()
   } catch (e) {}
 }
 
@@ -144,20 +133,15 @@ async function rejectOrder(order) {
     await ElMessageBox.confirm(`确认拒绝订单 ${order.orderNo}？此操作不可撤销。`, '拒绝订单', {
       confirmButtonText: '确认拒绝', cancelButtonText: '取消', type: 'warning'
     })
-    const res = await adminUpdateOrderStatusApi(order.id, '已取消')
-    if (res.data?.code === 200) {
-      ElMessage.success('订单已拒绝')
-      loadOrders()
-    } else {
-      ElMessage.error(res.data?.msg || '操作失败')
-    }
+    await adminUpdateOrderStatusApi(order.id, '已取消')
+    ElMessage.success('订单已拒绝')
+    loadOrders()
   } catch (e) {}
 }
 
 function chatWithUser(order) {
-  if (order.contactPhone) {
-    chatStore.ensureChat(order.contactPhone, { nickname: order.contactName || order.contactPhone, avatar: '' })
-    router.push({ path: '/admin/chat', query: { user: order.contactPhone } })
+  if (order.userId) {
+    router.push({ path: '/admin/chat', query: { user: order.userId } })
   }
 }
 </script>

@@ -3,6 +3,7 @@ package com.hunsha.controller;
 import com.hunsha.common.Result;
 import com.hunsha.dto.LoginDTO;
 import com.hunsha.dto.RegisterDTO;
+import com.hunsha.entity.User;
 import com.hunsha.service.UserService;
 import com.hunsha.vo.LoginVO;
 import com.hunsha.vo.UserVO;
@@ -41,5 +42,14 @@ public class AuthController {
         Long userId = (Long) request.getAttribute("userId");
         UserVO vo = userService.getUserInfo(userId);
         return Result.ok(vo);
+    }
+
+    @Operation(summary = "更新用户资料")
+    @PutMapping("/profile")
+    public Result<UserVO> updateProfile(@RequestBody User profile, HttpServletRequest request) {
+        Long userId = (Long) request.getAttribute("userId");
+        userService.updateProfile(userId, profile);
+        UserVO vo = userService.getUserInfo(userId);
+        return Result.ok(vo, "资料更新成功");
     }
 }

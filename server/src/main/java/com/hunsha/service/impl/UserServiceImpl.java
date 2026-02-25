@@ -111,4 +111,22 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
 
         return vo;
     }
+
+    @Override
+    public void updateProfile(Long userId, User profile) {
+        User user = getById(userId);
+        if (user == null) {
+            throw new BusinessException("用户不存在");
+        }
+        if (profile.getNickname() != null) {
+            user.setNickname(profile.getNickname());
+        }
+        if (profile.getAvatar() != null) {
+            user.setAvatar(profile.getAvatar());
+        }
+        if (profile.getEmail() != null) {
+            user.setEmail(profile.getEmail());
+        }
+        updateById(user);
+    }
 }

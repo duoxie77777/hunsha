@@ -9,8 +9,8 @@ spring:
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
     url: jdbc:mysql://localhost:3306/hunsha?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
-    username: root
-    password: root
+    username: hunsha
+    password: 123456
     type: com.alibaba.druid.pool.DruidDataSource
     druid:
       initial-size: 5
@@ -59,7 +59,7 @@ springdoc:
 
 # JWT 配置
 jwt:
-  secret: hunsha-wedding-photo-secret-key-2024-very-long-key
+  secret: hunsha-wedding-photo-secret-key-2026-very-long-key
   expiration: 86400000  # 24小时
 
 # 文件上传路径

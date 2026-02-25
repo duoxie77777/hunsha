@@ -56,16 +56,16 @@
             <router-link to="/admin/chat" class="view-all">进入聊天 →</router-link>
           </div>
           <div v-if="unreadChats.length" class="msg-list">
-            <div v-for="chat in unreadChats" :key="chat.phone" class="msg-item" @click="$router.push('/admin/chat')">
+            <div v-for="session in unreadChats" :key="session.userId" class="msg-item" @click="$router.push('/admin/chat')">
               <div class="msg-avatar">
-                <img v-if="chat.user.avatar" :src="chat.user.avatar" />
+                <img v-if="session.avatar" :src="session.avatar" />
                 <el-icon v-else :size="18" color="#fff"><User /></el-icon>
               </div>
               <div class="msg-info">
-                <span class="msg-name">{{ chat.user.nickname }}</span>
-                <span class="msg-preview">{{ lastMsg(chat) }}</span>
+                <span class="msg-name">{{ session.nickname }}</span>
+                <span class="msg-preview">{{ lastMsg(session) }}</span>
               </div>
-              <span class="msg-unread">{{ chat.unreadAdmin }}</span>
+              <span class="msg-unread">{{ session.unreadCount }}</span>
             </div>
           </div>
           <div v-else class="empty-msg">
@@ -118,14 +118,16 @@ onMounted(async () => {
       getDashboardStatsApi(),
       adminGetOrdersApi({ page: 1, size: 6 })
     ])
-    if (statsRes.status === 'fulfilled' && statsRes.value.data?.code === 200) {
-      dashStats.value = statsRes.value.data.data || {}
+    if (statsRes.status === 'fulfilled') {
+      dashStats.value = statsRes.value.data || {}
     }
-    if (ordersRes.status === 'fulfilled' && ordersRes.value.data?.code === 200) {
-      recentOrders.value = ordersRes.value.data.data?.records || []
+    if (ordersRes.status === 'fulfilled') {
+      recentOrders.value = ordersRes.value.data?.records || []
     }
   } catch (e) { console.error(e) }
   loading.value = false
+  // 加载聊天会话数据
+  await chatStore.loadSessions()
 })
 
 const todayOrders = computed(() => {
@@ -138,18 +140,16 @@ const pendingOrders = computed(() => {
   return statusMap['待确认'] || 0
 })
 
-const totalChats = computed(() => Object.keys(chatStore.chats).length)
+const totalChats = computed(() => chatStore.sessions.length)
 
 const unreadChats = computed(() =>
-  chatStore.chatListSorted.filter(c => c.unreadAdmin > 0).slice(0, 4)
+  chatStore.sessions.filter(s => s.unreadCount > 0).slice(0, 4)
 )
 
-function lastMsg(chat) {
-  const msgs = chat.messages
-  if (!msgs.length) return ''
-  const last = msgs[msgs.length - 1]
-  if (last.type === 'order') return '[预约订单]'
-  return (last.text || '').replace(/<[^>]+>/g, '').substring(0, 30)
+function lastMsg(session) {
+  if (!session.lastMessage) return ''
+  if (session.lastMessageType === 'order') return '[预约订单]'
+  return session.lastMessage.replace(/<[^>]+>/g, '').substring(0, 30)
 }
 
 const stats = computed(() => [

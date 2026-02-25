@@ -142,7 +142,7 @@ const timeline = [
   { year: '2015', title: '全国布局', desc: '上海、广州分店相继开业，正式开启全国化布局，推出旅拍服务，成为行业内旅拍服务的先行者。' },
   { year: '2018', title: '品牌升级', desc: '完成品牌全面升级，打造全新VI系统，建立标准化服务流程，年服务新人突破1万对。' },
   { year: '2021', title: '技术革新', desc: '引入3D虚拟场景拍摄技术，建立专业影像后期制作中心，荣获"中国婚纱摄影行业创新奖"。' },
-  { year: '2024', title: '全新征程', desc: '全国直营门店达8家，团队规模超100人，累计服务新人超10万对，开启品牌第二个十五年新篇章。' }
+  { year: '2026', title: '全新征程', desc: '全国直营门店达8家，团队规模超100人，累计服务新人超10万对，开启品牌第二个十五年新篇章。' }
 ]
 
 const advantages = [
@@ -162,12 +162,12 @@ const team = [
 ]
 
 const honors = [
-  { icon: 'Trophy', title: '中国婚纱摄影行业十大品牌', year: '2018-2024 连续7年' },
+  { icon: 'Trophy', title: '中国婚纱摄影行业十大品牌', year: '2018-2026 连续7年' },
   { icon: 'Medal', title: '全国婚纱摄影创新金奖', year: '2021年度' },
   { icon: 'Star', title: '消费者最信赖品牌', year: '2019-2023 连续5年' },
   { icon: 'Medal', title: '最佳服务品质奖', year: '2020年度' },
-  { icon: 'StarFilled', title: '客户满意度98.7%', year: '2024年度' },
-  { icon: 'OfficeBuilding', title: '五星级摄影机构', year: '2022-2024 连续3年' }
+  { icon: 'StarFilled', title: '客户满意度98.7%', year: '2026年度' },
+  { icon: 'OfficeBuilding', title: '五星级摄影机构', year: '2022-2026 连续3年' }
 ]
 
 const stores = [

@@ -26,7 +26,6 @@ public class InterceptorConfig implements WebMvcConfigurer {
                         "/api/packages/**",
                         "/api/portfolios",
                         "/api/portfolios/**",
-                        "/api/reviews",
                         "/doc.html",
                         "/swagger-ui/**",
                         "/v3/api-docs/**"

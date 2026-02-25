@@ -189,15 +189,13 @@ const eventRules = {
 async function loadSchedules() {
   try {
     const res = await getSchedulesApi({ page: 1, size: 200 })
-    if (res.data?.code === 200) {
-      events.value = (res.data.data?.records || []).map(s => ({
-        ...s,
-        date: s.shootDate || '',
-        time: s.timeSlot || '',
-        customerName: s.title || '',
-        pkgName: s.photographer || ''
-      }))
-    }
+    events.value = (res.data?.records || []).map(s => ({
+      ...s,
+      date: s.shootDate || '',
+      time: s.timeSlot || '',
+      customerName: s.title || '',
+      pkgName: s.photographer || ''
+    }))
   } catch (e) { console.error(e) }
 }
 
@@ -348,52 +346,32 @@ async function saveEvent() {
     }
     try {
       if (editingEvent.value) {
-        const res = await updateScheduleApi(editingEvent.value.id, payload)
-        if (res.data?.code === 200) {
-          ElMessage.success('排期已更新')
-          eventDialogVisible.value = false
-          loadSchedules()
-        } else {
-          ElMessage.error(res.data?.msg || '更新失败')
-        }
+        await updateScheduleApi(editingEvent.value.id, payload)
+        ElMessage.success('排期已更新')
       } else {
-        const res = await createScheduleApi(payload)
-        if (res.data?.code === 200) {
-          ElMessage.success('排期已创建')
-          eventDialogVisible.value = false
-          loadSchedules()
-        } else {
-          ElMessage.error(res.data?.msg || '创建失败')
-        }
+        await createScheduleApi(payload)
+        ElMessage.success('排期已创建')
       }
-    } catch (e) {
-      ElMessage.error('操作失败')
-    }
+      eventDialogVisible.value = false
+      loadSchedules()
+    } catch (e) {}
   })
 }
 
 async function confirmEvent(ev) {
   try {
-    const res = await updateScheduleApi(ev.id, { ...ev, status: '已确认' })
-    if (res.data?.code === 200) {
-      ElMessage.success('已确认')
-      loadSchedules()
-    }
-  } catch (e) {
-    ElMessage.error('操作失败')
-  }
+    await updateScheduleApi(ev.id, { ...ev, status: '已确认' })
+    ElMessage.success('已确认')
+    loadSchedules()
+  } catch (e) {}
 }
 
 async function completeEvent(ev) {
   try {
-    const res = await updateScheduleApi(ev.id, { ...ev, status: '已完成' })
-    if (res.data?.code === 200) {
-      ElMessage.success('已标记完成')
-      loadSchedules()
-    }
-  } catch (e) {
-    ElMessage.error('操作失败')
-  }
+    await updateScheduleApi(ev.id, { ...ev, status: '已完成' })
+    ElMessage.success('已标记完成')
+    loadSchedules()
+  } catch (e) {}
 }
 
 async function deleteEvent(ev) {
@@ -401,13 +379,9 @@ async function deleteEvent(ev) {
     await ElMessageBox.confirm(`确定删除「${ev.customerName || ev.title}」的排期吗？`, '删除确认', {
       confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning'
     })
-    const res = await deleteScheduleApi(ev.id)
-    if (res.data?.code === 200) {
-      ElMessage.success('已删除')
-      loadSchedules()
-    } else {
-      ElMessage.error(res.data?.msg || '删除失败')
-    }
+    await deleteScheduleApi(ev.id)
+    ElMessage.success('已删除')
+    loadSchedules()
   } catch (e) {}
 }
 </script>

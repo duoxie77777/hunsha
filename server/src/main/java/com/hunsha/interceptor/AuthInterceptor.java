@@ -25,6 +25,12 @@ public class AuthInterceptor implements HandlerInterceptor {
             return true;
         }
 
+        // GET 请求的评价列表不需要登录
+        String uri = request.getRequestURI();
+        if ("GET".equalsIgnoreCase(request.getMethod()) && "/api/reviews".equals(uri)) {
+            return true;
+        }
+
         String token = request.getHeader("Authorization");
         if (token != null && token.startsWith("Bearer ")) {
             token = token.substring(7);

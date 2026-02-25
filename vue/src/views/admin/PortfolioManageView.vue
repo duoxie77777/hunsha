@@ -122,14 +122,12 @@ const rules = {
 async function loadWorks() {
   try {
     const res = await adminGetPortfoliosApi({ page: 1, size: 100 })
-    if (res.data?.code === 200) {
-      works.value = (res.data.data?.records || []).map(w => ({
-        ...w,
-        cover: w.coverImage || '',
-        featured: w.isRecommended === 1,
-        date: w.createdAt ? w.createdAt.substring(0, 10) : ''
-      }))
-    }
+    works.value = (res.data?.records || []).map(w => ({
+      ...w,
+      cover: w.coverImage || '',
+      featured: w.isRecommended === 1,
+      date: w.createdAt ? w.createdAt.substring(0, 10) : ''
+    }))
   } catch (e) { console.error(e) }
 }
 
@@ -182,9 +180,7 @@ async function saveWork() {
       let coverUrl = formData.cover
       if (coverFile.value) {
         const uploadRes = await uploadImageApi(coverFile.value)
-        if (uploadRes.data?.code === 200) {
-          coverUrl = uploadRes.data.data
-        }
+        coverUrl = uploadRes.data || coverUrl
       }
       const payload = {
         title: formData.title,
@@ -195,23 +191,15 @@ async function saveWork() {
         status: 1
       }
       if (editingWork.value) {
-        const res = await adminUpdatePortfolioApi(editingWork.value.id, payload)
-        if (res.data?.code === 200) {
-          ElMessage.success('作品已更新')
-          dialogVisible.value = false
-          loadWorks()
-        } else {
-          ElMessage.error(res.data?.msg || '更新失败')
-        }
+        await adminUpdatePortfolioApi(editingWork.value.id, payload)
+        ElMessage.success('作品已更新')
+        dialogVisible.value = false
+        loadWorks()
       } else {
-        const res = await adminCreatePortfolioApi(payload)
-        if (res.data?.code === 200) {
-          ElMessage.success('作品已上传')
-          dialogVisible.value = false
-          loadWorks()
-        } else {
-          ElMessage.error(res.data?.msg || '创建失败')
-        }
+        await adminCreatePortfolioApi(payload)
+        ElMessage.success('作品已上传')
+        dialogVisible.value = false
+        loadWorks()
       }
     } catch (e) {
       ElMessage.error('操作失败')
@@ -223,14 +211,10 @@ async function saveWork() {
 async function toggleFeatured(work) {
   try {
     const newVal = work.featured ? 0 : 1
-    const res = await adminUpdatePortfolioApi(work.id, { isRecommended: newVal })
-    if (res.data?.code === 200) {
-      work.featured = !work.featured
-      ElMessage.success(work.featured ? '已设为推荐' : '已取消推荐')
-    }
-  } catch (e) {
-    ElMessage.error('操作失败')
-  }
+    await adminUpdatePortfolioApi(work.id, { isRecommended: newVal })
+    work.featured = !work.featured
+    ElMessage.success(work.featured ? '已设为推荐' : '已取消推荐')
+  } catch (e) {}
 }
 
 async function deleteWork(work) {
@@ -238,13 +222,9 @@ async function deleteWork(work) {
     await ElMessageBox.confirm(`确定删除作品「${work.title}」吗？`, '删除确认', {
       confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning'
     })
-    const res = await adminDeletePortfolioApi(work.id)
-    if (res.data?.code === 200) {
-      ElMessage.success('已删除')
-      loadWorks()
-    } else {
-      ElMessage.error(res.data?.msg || '删除失败')
-    }
+    await adminDeletePortfolioApi(work.id)
+    ElMessage.success('已删除')
+    loadWorks()
   } catch (e) {}
 }
 </script>

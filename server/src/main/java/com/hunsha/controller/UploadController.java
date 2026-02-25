@@ -11,6 +11,8 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.*;
 
 @Tag(name = "文件上传接口")
@@ -21,6 +23,14 @@ public class UploadController {
 
     @Value("${upload.path}")
     private String uploadPath;
+
+    /**
+     * 获取上传目录的绝对路径
+     */
+    private String getAbsoluteUploadPath() {
+        Path path = Paths.get(uploadPath).toAbsolutePath().normalize();
+        return path.toString() + File.separator;
+    }
 
     private static final Set<String> ALLOWED_TYPES = Set.of(
             "image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp"
@@ -68,16 +78,17 @@ public class UploadController {
 
             // 按年月分目录存储
             Calendar cal = Calendar.getInstance();
-            String subDir = cal.get(Calendar.YEAR) + "/" + String.format("%02d", cal.get(Calendar.MONTH) + 1);
-            File dir = new File(uploadPath + subDir);
+            String subDir = cal.get(Calendar.YEAR) + File.separator + String.format("%02d", cal.get(Calendar.MONTH) + 1);
+            String absolutePath = getAbsoluteUploadPath();
+            File dir = new File(absolutePath + subDir);
             if (!dir.exists()) {
                 dir.mkdirs();
             }
 
             File dest = new File(dir, filename);
-            file.transferTo(dest);
+            file.transferTo(dest.getAbsoluteFile());
 
-            return "/uploads/" + subDir + "/" + filename;
+            return "/uploads/" + cal.get(Calendar.YEAR) + "/" + String.format("%02d", cal.get(Calendar.MONTH) + 1) + "/" + filename;
         } catch (IOException e) {
             throw new BusinessException("文件上传失败: " + e.getMessage());
         }

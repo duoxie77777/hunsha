@@ -14,3 +14,8 @@ export function loginApi(data) {
 export function getUserInfoApi() {
   return request.get('/auth/info')
 }
+
+// 更新用户资料
+export function updateProfileApi(data) {
+  return request.put('/auth/profile', data)
+}

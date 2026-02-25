@@ -151,18 +151,16 @@ async function loadReviews() {
   try {
     const params = { page: 1, size: 100 }
     const res = await adminGetReviewsApi(params)
-    if (res.data?.code === 200) {
-      reviews.value = (res.data.data?.records || []).map(r => ({
-        ...r,
-        customerName: r.contactName || r.nickname || `用户${r.userId}`,
-        date: r.createdAt ? r.createdAt.substring(0, 10) : '',
-        reply: r.adminReply || '',
-        replied: !!r.adminReply,
-        featured: r.isFeatured === 1,
-        pkgName: r.packageName || '',
-        avatar: r.avatar || ''
-      }))
-    }
+    reviews.value = (res.data?.records || []).map(r => ({
+      ...r,
+      customerName: r.contactName || r.nickname || `用户${r.userId}`,
+      date: r.createdAt ? r.createdAt.substring(0, 10) : '',
+      reply: r.adminReply || '',
+      replied: !!r.adminReply,
+      featured: r.isFeatured === 1,
+      pkgName: r.packageName || '',
+      avatar: r.avatar || ''
+    }))
   } catch (e) { console.error(e) }
 }
 
@@ -201,34 +199,22 @@ function openReplyDialog(review) {
 async function submitReply() {
   if (!replyText.value.trim() || !replyingReview.value) return
   try {
-    const res = await adminReplyReviewApi(replyingReview.value.id, replyText.value.trim())
-    if (res.data?.code === 200) {
-      replyingReview.value.reply = replyText.value.trim()
-      replyingReview.value.adminReply = replyText.value.trim()
-      replyingReview.value.replied = true
-      replyDialogVisible.value = false
-      ElMessage.success('回复成功')
-    } else {
-      ElMessage.error(res.data?.msg || '回复失败')
-    }
-  } catch (e) {
-    ElMessage.error('回复失败')
-  }
+    await adminReplyReviewApi(replyingReview.value.id, replyText.value.trim())
+    replyingReview.value.reply = replyText.value.trim()
+    replyingReview.value.adminReply = replyText.value.trim()
+    replyingReview.value.replied = true
+    replyDialogVisible.value = false
+    ElMessage.success('回复成功')
+  } catch (e) {}
 }
 
 async function toggleFeatured(review) {
   try {
-    const res = await adminToggleFeaturedApi(review.id)
-    if (res.data?.code === 200) {
-      review.featured = !review.featured
-      review.isFeatured = review.featured ? 1 : 0
-      ElMessage.success(review.featured ? '已设为精选' : '已取消精选')
-    } else {
-      ElMessage.error(res.data?.msg || '操作失败')
-    }
-  } catch (e) {
-    ElMessage.error('操作失败')
-  }
+    await adminToggleFeaturedApi(review.id)
+    review.featured = !review.featured
+    review.isFeatured = review.featured ? 1 : 0
+    ElMessage.success(review.featured ? '已设为精选' : '已取消精选')
+  } catch (e) {}
 }
 
 async function deleteReview(review) {
@@ -236,13 +222,9 @@ async function deleteReview(review) {
     await ElMessageBox.confirm(`确定删除「${review.customerName}」的评价吗？`, '删除确认', {
       confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning'
     })
-    const res = await adminUpdateReviewStatusApi(review.id, 0)
-    if (res.data?.code === 200) {
-      reviews.value = reviews.value.filter(r => r.id !== review.id)
-      ElMessage.success('已删除')
-    } else {
-      ElMessage.error(res.data?.msg || '删除失败')
-    }
+    await adminUpdateReviewStatusApi(review.id, 0)
+    reviews.value = reviews.value.filter(r => r.id !== review.id)
+    ElMessage.success('已删除')
   } catch (e) {}
 }
 

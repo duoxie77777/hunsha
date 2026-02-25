@@ -20,10 +20,6 @@
           登 录
         </el-button>
       </el-form>
-      <div class="login-hint">
-        <el-icon :size="14"><InfoFilled /></el-icon>
-        演示账号：admin / admin123
-      </div>
     </div>
   </div>
 
@@ -97,7 +93,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Shop, User, Lock, InfoFilled, DataAnalysis, Document, ChatDotRound, Fold, Expand, Monitor, SwitchButton, UserFilled, Avatar, Picture, PriceTag, Calendar, StarFilled } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
@@ -156,6 +152,12 @@ function handleLogout() {
   adminStore.logout()
   ElMessage.success('已退出')
 }
+
+onMounted(() => {
+  if (adminStore.isLoggedIn) {
+    chatStore.loadUnreadCount()
+  }
+})
 </script>
 
 <style scoped>

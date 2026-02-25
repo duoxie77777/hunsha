@@ -54,7 +54,7 @@
         </div>
       </div>
       <div class="footer-bottom">
-        <p>&copy; 2024 唯爱婚纱摄影 All Rights Reserved. 京ICP备12345678号</p>
+        <p>&copy; 2026 唯爱婚纱摄影 All Rights Reserved. 京ICP备12345678号</p>
       </div>
     </div>
   </footer>

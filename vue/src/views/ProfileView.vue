@@ -224,6 +224,7 @@ import { UserFilled, User, Camera, Document, Setting, Plus, ChatDotRound, Phone,
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { userStore } from '../stores/user'
 import { useRouter, useRoute } from 'vue-router'
+import { uploadImageApi } from '../api/upload'
 
 const router = useRouter()
 const route = useRoute()
@@ -266,34 +267,36 @@ function triggerUpload() {
   fileInput.value?.click()
 }
 
-function handleAvatarChange(e) {
+async function handleAvatarChange(e) {
   const file = e.target.files?.[0]
   if (!file) return
   if (file.size > 2 * 1024 * 1024) {
     ElMessage.warning('头像图片不能超过2MB')
     return
   }
-  const reader = new FileReader()
-  reader.onload = (ev) => {
-    userStore.updateProfile({ avatar: ev.target.result })
+  try {
+    const res = await uploadImageApi(file)
+    const avatarUrl = res.data
+    await userStore.updateProfileRemote({ avatar: avatarUrl })
     ElMessage.success('头像已更新')
+  } catch {
+    // error handled by interceptor
   }
-  reader.readAsDataURL(file)
+  e.target.value = ''
 }
 
-function saveProfile() {
+async function saveProfile() {
   saving.value = true
-  setTimeout(() => {
-    userStore.updateProfile({
-      nickname: profile.nickname,
-      age: profile.age,
-      bio: profile.bio,
-      partnerName: profile.partnerName,
-      weddingDate: profile.weddingDate
+  try {
+    await userStore.updateProfileRemote({
+      nickname: profile.nickname
     })
-    saving.value = false
     ElMessage.success('资料保存成功！')
-  }, 500)
+  } catch {
+    // error handled by interceptor
+  } finally {
+    saving.value = false
+  }
 }
 
 function goReview(order) {

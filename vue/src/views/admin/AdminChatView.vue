@@ -8,26 +8,29 @@
         </div>
         <div class="session-list">
           <div
-            v-for="chat in filteredChats"
-            :key="chat.phone"
+            v-for="session in filteredSessions"
+            :key="session.userId"
             class="session-item"
-            :class="{ active: activePhone === chat.phone }"
-            @click="selectChat(chat.phone)"
+            :class="{ active: activeUserId === session.userId }"
+            @click="selectSession(session)"
           >
             <div class="session-avatar">
-              <img v-if="chat.user.avatar" :src="chat.user.avatar" />
+              <img v-if="session.avatar" :src="session.avatar" />
               <el-icon v-else :size="20" color="#fff"><User /></el-icon>
-              <span v-if="chat.unreadAdmin" class="unread-dot">{{ chat.unreadAdmin > 9 ? '9+' : chat.unreadAdmin }}</span>
+              <span v-if="session.unreadCount" class="unread-dot">{{ session.unreadCount > 9 ? '9+' : session.unreadCount }}</span>
             </div>
             <div class="session-info">
               <div class="session-top">
-                <span class="session-name">{{ chat.user.nickname }}</span>
-                <span class="session-time">{{ formatTime(chat.lastTime) }}</span>
+                <span class="session-name">{{ session.nickname }}</span>
+                <span class="session-time">{{ formatTime(session.lastTime) }}</span>
               </div>
-              <p class="session-preview">{{ previewMsg(chat) }}</p>
+              <p class="session-preview">{{ previewMsg(session) }}</p>
             </div>
           </div>
-          <div v-if="!filteredChats.length" class="empty-sessions">
+          <div v-if="sessionsLoading" class="empty-sessions">
+            <p>加载中...</p>
+          </div>
+          <div v-else-if="!filteredSessions.length" class="empty-sessions">
             <el-icon :size="40" color="#ddd"><ChatDotRound /></el-icon>
             <p>暂无会话</p>
           </div>
@@ -35,41 +38,34 @@
       </div>
 
       <!-- 右侧聊天区 -->
-      <div class="chat-main" v-if="activePhone && activeChat">
+      <div class="chat-main" v-if="activeUserId && activeSession">
         <!-- 聊天头部 -->
         <div class="chat-main-header">
           <div class="chat-user-info">
             <div class="user-avatar-sm">
-              <img v-if="activeChat.user.avatar" :src="activeChat.user.avatar" />
+              <img v-if="activeSession.avatar" :src="activeSession.avatar" />
               <el-icon v-else :size="20" color="#fff"><User /></el-icon>
             </div>
             <div>
-              <h4>{{ activeChat.user.nickname }}</h4>
-              <span class="user-phone-sm">{{ activeChat.user.phone }}</span>
+              <h4>{{ activeSession.nickname }}</h4>
+              <span class="user-phone-sm">{{ activeSession.phone }}</span>
             </div>
-          </div>
-          <div class="chat-main-actions">
-            <el-tooltip content="查看客户订单">
-              <button class="action-btn" @click="viewUserOrders">
-                <el-icon :size="18"><Document /></el-icon>
-              </button>
-            </el-tooltip>
           </div>
         </div>
 
         <!-- 消息区域 -->
         <div class="chat-messages" ref="messagesRef">
-          <div class="date-divider"><span>{{ todayStr }}</span></div>
+          <div v-if="messagesLoading" class="loading-tip">加载中...</div>
           <div
-            v-for="(msg, idx) in activeChat.messages"
-            :key="idx"
+            v-for="msg in chatMessages"
+            :key="msg.id"
             class="chat-msg"
-            :class="msg.from === 'user' ? 'from-user' : 'from-admin'"
+            :class="msg.senderId === 0 ? 'from-admin' : 'from-user'"
           >
             <div class="msg-avatar-wrap">
-              <template v-if="msg.from === 'user'">
+              <template v-if="msg.senderId !== 0">
                 <div class="msg-avatar customer">
-                  <img v-if="activeChat.user.avatar" :src="activeChat.user.avatar" />
+                  <img v-if="activeSession.avatar" :src="activeSession.avatar" />
                   <el-icon v-else :size="16" color="#fff"><User /></el-icon>
                 </div>
               </template>
@@ -79,22 +75,18 @@
                 </div>
               </template>
             </div>
-            <div class="msg-body" :class="msg.from === 'user' ? 'from-user' : 'from-admin'">
-              <div class="msg-bubble" :class="msg.from === 'user' ? 'user-bubble' : 'admin-bubble'">
-                <!-- 订单卡片 -->
+            <div class="msg-body" :class="msg.senderId === 0 ? 'from-admin' : 'from-user'">
+              <div class="msg-bubble" :class="msg.senderId === 0 ? 'admin-bubble' : 'user-bubble'">
                 <div v-if="msg.type === 'order'" class="order-card-inline">
                   <div class="oc-head">
                     <el-icon :size="14"><Document /></el-icon>
                     <span>预约订单</span>
                   </div>
-                  <div class="oc-row"><span>订单号</span><strong>{{ msg.order?.id }}</strong></div>
-                  <div class="oc-row"><span>套餐</span><strong>{{ msg.order?.pkgLabel }}</strong></div>
-                  <div class="oc-row"><span>日期</span><strong>{{ msg.order?.date || '待定' }}</strong></div>
-                  <div class="oc-row"><span>风格</span><strong>{{ msg.order?.styles || '未选择' }}</strong></div>
+                  <p class="oc-content">{{ msg.content }}</p>
                 </div>
-                <div v-else v-html="msg.text"></div>
+                <div v-else v-html="msg.content"></div>
               </div>
-              <span class="msg-time-sm">{{ msg.time }}</span>
+              <span class="msg-time-sm">{{ formatMsgTime(msg.createdAt) }}</span>
             </div>
           </div>
         </div>
@@ -116,7 +108,7 @@
           />
           <el-button
             type="primary"
-            :disabled="!inputText.trim()"
+            :disabled="!inputText.trim() || sending"
             class="send-msg-btn"
             @click="sendAdminMessage"
           >
@@ -133,45 +125,29 @@
         <p>左侧选择客户会话，在这里回复消息</p>
       </div>
     </div>
-
-    <!-- 客户订单抽屉 -->
-    <el-drawer v-model="orderDrawerVisible" title="客户订单" size="400px" direction="rtl">
-      <div v-if="userOrders.length" class="drawer-orders">
-        <div v-for="o in userOrders" :key="o.id" class="drawer-order-card">
-          <div class="doc-header">
-            <span class="doc-id">{{ o.id }}</span>
-            <el-tag :type="statusType(o.status)" size="small" round>{{ o.status }}</el-tag>
-          </div>
-          <div class="doc-row"><span>套餐</span><span>{{ o.pkgLabel }}</span></div>
-          <div class="doc-row"><span>日期</span><span>{{ o.date }}</span></div>
-          <div class="doc-row"><span>风格</span><span>{{ o.styles || '未选择' }}</span></div>
-          <div class="doc-row"><span>创建</span><span>{{ o.createTime }}</span></div>
-          <div class="doc-actions" v-if="o.status === '待确认'">
-            <el-button type="primary" size="small" @click="confirmFromDrawer(o)">确认订单</el-button>
-          </div>
-        </div>
-      </div>
-      <div v-else class="drawer-empty">
-        <p>该客户暂无订单</p>
-      </div>
-    </el-drawer>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, watch, nextTick, onMounted } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { Search, User, ChatDotRound, Document, Headset, Promotion } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { chatStore } from '../../stores/chat'
-import { userStore } from '../../stores/user'
+import { adminGetSessionsApi, adminGetMessagesApi, adminSendMessageApi } from '../../api/chat'
 import { useRoute } from 'vue-router'
 
 const route = useRoute()
 const messagesRef = ref(null)
 const searchText = ref('')
-const activePhone = ref('')
+const activeUserId = ref(null)
+const activeSession = ref(null)
 const inputText = ref('')
-const orderDrawerVisible = ref(false)
+const sending = ref(false)
+const sessionsLoading = ref(false)
+const messagesLoading = ref(false)
+const chatMessages = ref([])
+const sessions = ref([])
+let pollTimer = null
 
 const quickReplies = [
   '好的，已收到~',
@@ -181,37 +157,52 @@ const quickReplies = [
   '好的，我帮您备注',
 ]
 
-const filteredChats = computed(() => {
-  let list = chatStore.chatListSorted
+const filteredSessions = computed(() => {
+  let list = sessions.value
   if (searchText.value.trim()) {
     const kw = searchText.value.trim().toLowerCase()
-    list = list.filter(c =>
-      c.user.nickname?.toLowerCase().includes(kw) ||
-      c.phone?.includes(kw)
+    list = list.filter(s =>
+      s.nickname?.toLowerCase().includes(kw) ||
+      s.phone?.includes(kw)
     )
   }
   return list
 })
 
-const activeChat = computed(() => {
-  if (!activePhone.value) return null
-  return chatStore.getChat(activePhone.value)
-})
+async function loadSessions() {
+  sessionsLoading.value = true
+  try {
+    const res = await adminGetSessionsApi()
+    sessions.value = res.data || []
+    chatStore.totalUnreadAdmin = sessions.value.reduce((sum, s) => sum + (s.unreadCount || 0), 0)
+  } catch (e) {
+    console.error('加载会话列表失败', e)
+  }
+  sessionsLoading.value = false
+}
 
-const userOrders = computed(() => {
-  if (!activePhone.value) return []
-  return (userStore.orders || []).filter(o => o.phone === activePhone.value)
-})
-
-const todayStr = computed(() => {
-  const d = new Date()
-  return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`
-})
-
-function selectChat(phone) {
-  activePhone.value = phone
-  chatStore.clearUnreadAdmin(phone)
+async function loadMessages(userId) {
+  messagesLoading.value = true
+  try {
+    const res = await adminGetMessagesApi(userId)
+    chatMessages.value = res.data || []
+    // 更新会话未读数
+    const session = sessions.value.find(s => s.userId === userId)
+    if (session) {
+      session.unreadCount = 0
+    }
+    chatStore.totalUnreadAdmin = sessions.value.reduce((sum, s) => sum + (s.unreadCount || 0), 0)
+  } catch (e) {
+    console.error('加载消息失败', e)
+  }
+  messagesLoading.value = false
   scrollToBottom()
+}
+
+function selectSession(session) {
+  activeUserId.value = session.userId
+  activeSession.value = session
+  loadMessages(session.userId)
 }
 
 function scrollToBottom() {
@@ -222,9 +213,9 @@ function scrollToBottom() {
   })
 }
 
-function formatTime(ts) {
-  if (!ts) return ''
-  const d = new Date(ts)
+function formatTime(dateStr) {
+  if (!dateStr) return ''
+  const d = new Date(dateStr)
   const now = new Date()
   if (d.toDateString() === now.toDateString()) {
     return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
@@ -232,31 +223,39 @@ function formatTime(ts) {
   return `${d.getMonth() + 1}/${d.getDate()}`
 }
 
-function previewMsg(chat) {
-  const msgs = chat.messages
-  if (!msgs || !msgs.length) return '暂无消息'
-  const last = msgs[msgs.length - 1]
-  if (last.type === 'order') return '[预约订单]'
-  const prefix = last.from === 'cs' ? '[客服] ' : ''
-  return prefix + (last.text || '').replace(/<[^>]+>/g, '').substring(0, 28)
+function formatMsgTime(dateStr) {
+  if (!dateStr) return ''
+  const d = new Date(dateStr)
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
-function getTime() {
-  const now = new Date()
-  return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+function previewMsg(session) {
+  if (!session.lastMessage) return '暂无消息'
+  if (session.lastMessageType === 'order') return '[预约订单]'
+  return session.lastMessage.replace(/<[^>]+>/g, '').substring(0, 28)
 }
 
-function sendAdminMessage() {
+async function sendAdminMessage() {
   const text = inputText.value.trim()
-  if (!text || !activePhone.value) return
+  if (!text || !activeUserId.value || sending.value) return
 
-  chatStore.addMessage(activePhone.value, {
-    from: 'cs',
-    text,
-    time: getTime()
-  })
-  inputText.value = ''
-  scrollToBottom()
+  sending.value = true
+  try {
+    const res = await adminSendMessageApi(activeUserId.value, { content: text, type: 'text' })
+    chatMessages.value.push(res.data)
+    inputText.value = ''
+    scrollToBottom()
+    // 更新会话列表中的最后一条消息
+    const session = sessions.value.find(s => s.userId === activeUserId.value)
+    if (session) {
+      session.lastMessage = text
+      session.lastMessageType = 'text'
+      session.lastTime = new Date().toISOString()
+    }
+  } catch (e) {
+    ElMessage.error('发送失败')
+  }
+  sending.value = false
 }
 
 function quickReply(text) {
@@ -264,38 +263,55 @@ function quickReply(text) {
   sendAdminMessage()
 }
 
-function viewUserOrders() {
-  orderDrawerVisible.value = true
+// 轮询：刷新当前会话消息 + 会话列表
+function startPoll() {
+  stopPoll()
+  pollTimer = setInterval(async () => {
+    // 刷新会话列表
+    try {
+      const res = await adminGetSessionsApi()
+      sessions.value = res.data || []
+      chatStore.totalUnreadAdmin = sessions.value.reduce((sum, s) => sum + (s.unreadCount || 0), 0)
+    } catch (e) {}
+    // 如果有选中的会话，也刷新消息
+    if (activeUserId.value) {
+      try {
+        const res = await adminGetMessagesApi(activeUserId.value)
+        chatMessages.value = res.data || []
+        const session = sessions.value.find(s => s.userId === activeUserId.value)
+        if (session) session.unreadCount = 0
+        chatStore.totalUnreadAdmin = sessions.value.reduce((sum, s) => sum + (s.unreadCount || 0), 0)
+        scrollToBottom()
+      } catch (e) {}
+    }
+  }, 1000)
 }
 
-function statusType(s) {
-  return { '待确认': 'warning', '已确认': 'success', '已完成': 'info', '已取消': 'danger' }[s] || 'info'
-}
-
-function confirmFromDrawer(order) {
-  order.status = '已确认'
-  localStorage.setItem('weiai_orders', JSON.stringify(userStore.orders))
-  ElMessage.success('订单已确认')
-  // 发一条自动消息
-  chatStore.addMessage(activePhone.value, {
-    from: 'cs',
-    text: `您的订单 <strong>${order.id}</strong> 已确认，我们会在拍摄前一天与您联系 😊`,
-    time: getTime()
-  })
-  scrollToBottom()
-}
-
-// 自动选中 URL query 中的用户
-onMounted(() => {
-  if (route.query.user) {
-    activePhone.value = route.query.user
-    chatStore.clearUnreadAdmin(route.query.user)
-    scrollToBottom()
+function stopPoll() {
+  if (pollTimer) {
+    clearInterval(pollTimer)
+    pollTimer = null
   }
+}
+
+onMounted(async () => {
+  await loadSessions()
+  // 自动选中 URL query 中的用户
+  if (route.query.user) {
+    const userId = Number(route.query.user)
+    const session = sessions.value.find(s => s.userId === userId)
+    if (session) {
+      selectSession(session)
+    }
+  }
+  startPoll()
 })
 
-// 监听消息变化自动滚底
-watch(() => activeChat.value?.messages?.length, () => {
+onUnmounted(() => {
+  stopPoll()
+})
+
+watch(() => chatMessages.value.length, () => {
   scrollToBottom()
 })
 </script>
@@ -479,25 +495,6 @@ watch(() => activeChat.value?.messages?.length, () => {
   color: #999;
 }
 
-.action-btn {
-  width: 36px;
-  height: 36px;
-  border-radius: 8px;
-  border: 1px solid #e8e8e8;
-  background: #fff;
-  color: #666;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s;
-}
-
-.action-btn:hover {
-  border-color: var(--secondary-color);
-  color: var(--secondary-color);
-}
-
 /* 消息区域 */
 .chat-messages {
   flex: 1;
@@ -512,13 +509,11 @@ watch(() => activeChat.value?.messages?.length, () => {
 .chat-messages::-webkit-scrollbar { width: 5px; }
 .chat-messages::-webkit-scrollbar-thumb { background: #ddd; border-radius: 3px; }
 
-.date-divider { text-align: center; padding: 6px 0; }
-.date-divider span {
-  background: #e8e8e8;
-  color: #999;
-  font-size: 0.72rem;
-  padding: 3px 12px;
-  border-radius: 10px;
+.loading-tip {
+  text-align: center;
+  color: #ccc;
+  font-size: 0.85rem;
+  padding: 20px;
 }
 
 .chat-msg {
@@ -593,9 +588,7 @@ watch(() => activeChat.value?.messages?.length, () => {
 }
 
 /* 订单卡片 */
-.order-card-inline {
-  min-width: 200px;
-}
+.order-card-inline { min-width: 200px; }
 
 .oc-head {
   display: flex;
@@ -603,21 +596,17 @@ watch(() => activeChat.value?.messages?.length, () => {
   gap: 6px;
   font-weight: 700;
   font-size: 0.85rem;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
   padding-bottom: 6px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+  border-bottom: 1px solid #f0f0f0;
 }
 
-.user-bubble .oc-head { border-bottom-color: #f0f0f0; }
-
-.oc-row {
-  display: flex;
-  justify-content: space-between;
-  font-size: 0.8rem;
-  margin-top: 4px;
+.oc-content {
+  font-size: 0.82rem;
+  color: #555;
+  margin: 0;
+  line-height: 1.5;
 }
-
-.oc-row span:first-child { opacity: 0.7; }
 
 /* 快捷回复 */
 .quick-replies {
@@ -697,52 +686,6 @@ watch(() => activeChat.value?.messages?.length, () => {
 
 .chat-empty h3 { color: #999; font-size: 1.1rem; }
 .chat-empty p { color: #ccc; font-size: 0.9rem; }
-
-/* 抽屉 */
-.drawer-orders {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.drawer-order-card {
-  border: 1px solid #f0f0f0;
-  border-radius: 12px;
-  padding: 16px;
-}
-
-.doc-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid #f0f0f0;
-}
-
-.doc-id {
-  font-family: monospace;
-  font-weight: 700;
-  color: #667eea;
-}
-
-.doc-row {
-  display: flex;
-  justify-content: space-between;
-  font-size: 0.85rem;
-  padding: 4px 0;
-  color: #666;
-}
-
-.doc-row span:last-child { font-weight: 600; color: #333; }
-
-.doc-actions { margin-top: 12px; text-align: right; }
-
-.drawer-empty {
-  text-align: center;
-  padding: 40px;
-  color: #ccc;
-}
 
 @media (max-width: 768px) {
   .chat-sidebar { width: 80px; }

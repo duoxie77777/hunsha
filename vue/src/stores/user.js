@@ -1,5 +1,5 @@
 import { reactive } from 'vue'
-import { loginApi, registerApi, getUserInfoApi } from '../api/auth'
+import { loginApi, registerApi, getUserInfoApi, updateProfileApi } from '../api/auth'
 import { createOrderApi, getMyOrdersApi, cancelOrderApi } from '../api/order'
 
 const TOKEN_KEY = 'token'
@@ -92,6 +92,16 @@ export const userStore = reactive({
     if (!this.user) return
     Object.assign(this.user, profile)
     localStorage.setItem(USER_KEY, JSON.stringify(this.user))
+  },
+
+  async updateProfileRemote(profile) {
+    const res = await updateProfileApi(profile)
+    const data = res.data
+    if (data) {
+      this.user = { ...this.user, ...data }
+      localStorage.setItem(USER_KEY, JSON.stringify(this.user))
+    }
+    return data
   },
 
   // 创建订单 - 调用后端接口

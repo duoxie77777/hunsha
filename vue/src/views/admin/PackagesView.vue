@@ -118,15 +118,14 @@ const formRules = {
 async function loadPackages() {
   try {
     const res = await adminGetPackagesApi({ page: 1, size: 100 })
-    if (res.data?.code === 200) {
-      packages.value = (res.data.data?.records || []).map(p => ({
-        ...p,
-        features: p.includes || [],
-        hot: p.isHot === 1,
-        online: p.status === 1,
-        color: 'linear-gradient(135deg, #f1aeb5, #e88a94)'
-      }))
-    }
+    const records = res.data?.records || []
+    packages.value = records.map(p => ({
+      ...p,
+      features: p.includes || [],
+      hot: p.isHot === 1,
+      online: p.status === 1,
+      color: 'linear-gradient(135deg, #f1aeb5, #e88a94)'
+    }))
   } catch (e) { console.error(e) }
 }
 
@@ -179,26 +178,16 @@ async function savePkg() {
     }
     try {
       if (editingPkg.value) {
-        const res = await adminUpdatePackageApi(editingPkg.value.id, payload)
-        if (res.data?.code === 200) {
-          ElMessage.success('套餐已更新')
-          dialogVisible.value = false
-          loadPackages()
-        } else {
-          ElMessage.error(res.data?.msg || '更新失败')
-        }
+        await adminUpdatePackageApi(editingPkg.value.id, payload)
+        ElMessage.success('套餐已更新')
       } else {
-        const res = await adminCreatePackageApi(payload)
-        if (res.data?.code === 200) {
-          ElMessage.success('套餐已创建')
-          dialogVisible.value = false
-          loadPackages()
-        } else {
-          ElMessage.error(res.data?.msg || '创建失败')
-        }
+        await adminCreatePackageApi(payload)
+        ElMessage.success('套餐已创建')
       }
+      dialogVisible.value = false
+      loadPackages()
     } catch (e) {
-      ElMessage.error('操作失败')
+      // 拦截器已弹出错误提示，这里不重复提示
     }
   })
 }
@@ -206,17 +195,11 @@ async function savePkg() {
 async function toggleOnline(pkg) {
   try {
     const newStatus = pkg.online ? 0 : 1
-    const res = await adminTogglePackageStatusApi(pkg.id, newStatus)
-    if (res.data?.code === 200) {
-      pkg.online = !pkg.online
-      pkg.status = newStatus
-      ElMessage.success(pkg.online ? '已上架' : '已下架')
-    } else {
-      ElMessage.error(res.data?.msg || '操作失败')
-    }
-  } catch (e) {
-    ElMessage.error('操作失败')
-  }
+    await adminTogglePackageStatusApi(pkg.id, newStatus)
+    pkg.online = !pkg.online
+    pkg.status = newStatus
+    ElMessage.success(pkg.online ? '已上架' : '已下架')
+  } catch (e) {}
 }
 
 async function deletePkg(pkg) {
@@ -225,12 +208,8 @@ async function deletePkg(pkg) {
       confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning'
     })
     const res = await adminDeletePackageApi(pkg.id)
-    if (res.data?.code === 200) {
-      ElMessage.success('已删除')
-      loadPackages()
-    } else {
-      ElMessage.error(res.data?.msg || '删除失败')
-    }
+    ElMessage.success('已删除')
+    loadPackages()
   } catch (e) {}
 }
 </script>

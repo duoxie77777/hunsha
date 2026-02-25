@@ -20,7 +20,7 @@
         <div class="promotion-banner">
           <h3>限时优惠 · 春季特惠</h3>
           <p>活动期间预订任意套餐，立减800元，再赠送价值1500元的婚嫁大礼包</p>
-          <div class="promotion-price">活动截止：2024年6月30日</div>
+          <div class="promotion-price">活动截止：2026年6月30日</div>
           <button class="btn-custom" @click="userStore.openBooking()">立即抢购</button>
         </div>
 
